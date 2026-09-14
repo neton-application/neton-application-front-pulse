@@ -14,6 +14,7 @@ export default defineFrontModule({
     { key: "pulse/crashes/index", path: "/pulse/crashes", entry: "crashes", rendering: "client" },
     { key: "pulse/performance/index", path: "/pulse/performance", entry: "performance", rendering: "client" },
     { key: "pulse/pipeline/index", path: "/pulse/pipeline", entry: "pipeline", rendering: "client" },
+    { key: "pulse/versions/index", path: "/pulse/versions", entry: "versions", rendering: "client" },
     { key: "pulse/crash-issues/index", path: "/pulse/crash-issues", entry: "crash-issues", rendering: "client" },
     { key: "pulse/audit/index", path: "/pulse/audit", entry: "audit", rendering: "client" },
     // 规则维护是审计页的子页面，从审计页进入，不单独出现在菜单里。
