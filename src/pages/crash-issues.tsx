@@ -91,7 +91,7 @@ export default function Page() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="PULSE"
-        title="崩溃聚合"
+        title="崩溃分析"
         description="同一处崩溃归并为一个问题。分组依据是栈顶若干帧的静态地址（已去掉 ASLR 偏移），而不是崩溃信息文本——同一个 bug 的文本常常带着每次不同的地址。"
       />
 

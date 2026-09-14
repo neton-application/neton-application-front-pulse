@@ -55,7 +55,7 @@ export default function Page() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="PULSE" title="概览" description="应用分析与质量监控：全局汇总、事件构成、崩溃与错误。" />
+      <PageHeader eyebrow="PULSE" title="总览" description="应用分析与质量监控：全局汇总、事件构成、崩溃与错误。" />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map(([label, v, cls]) => (

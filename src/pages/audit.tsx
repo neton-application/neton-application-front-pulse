@@ -132,7 +132,7 @@ export default function Page() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="PULSE"
-        title="插件审计"
+        title="安全审计"
         description="两类发现：结构（随包分发了哪些镜像）与动作（哪个镜像在运行时调用了敏感 API）。客户端只陈述事实，不携带任何结论；判定在服务端按规则做，可随时调整。"
       />
 

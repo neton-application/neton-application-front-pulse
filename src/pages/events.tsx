@@ -10,7 +10,7 @@ export default function Page() {
       config={{
         resourceKey: "pulse-event",
         eyebrow: "PULSE",
-        title: "事件分析",
+        title: "事件",
         description: "客户端上报的统一事件，只存元数据。可按类型、事件名、会话筛选。",
         endpoint: "/pulse/event",
         listPath: "page",

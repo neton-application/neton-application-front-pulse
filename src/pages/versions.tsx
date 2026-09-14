@@ -88,7 +88,7 @@ export default function Page() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="PULSE"
-        title="版本对比"
+        title="版本分析"
         description="按构建号聚合。构建号是客户端上报的单调计数（iOS 取 CFBundleVersion，Android 取 versionCode），版本名只用于展示。"
       />
 
