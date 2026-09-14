@@ -16,6 +16,9 @@ export default defineFrontModule({
     { key: "pulse/pipeline/index", path: "/pulse/pipeline", entry: "pipeline", rendering: "client" },
     { key: "pulse/versions/index", path: "/pulse/versions", entry: "versions", rendering: "client" },
     { key: "pulse/crash-issues/index", path: "/pulse/crash-issues", entry: "crash-issues", rendering: "client" },
+    { key: "pulse/alerts/index", path: "/pulse/alerts", entry: "alerts", rendering: "client" },
+    // 规则维护是告警页的子页面，从告警页进入，不单独出现在菜单里。
+    { key: "pulse/alert-rules/index", path: "/pulse/alert-rules", entry: "alert-rules", rendering: "client" },
     { key: "pulse/audit/index", path: "/pulse/audit", entry: "audit", rendering: "client" },
     // 规则维护是审计页的子页面，从审计页进入，不单独出现在菜单里。
     { key: "pulse/audit-rules/index", path: "/pulse/audit-rules", entry: "audit-rules", rendering: "client" },
