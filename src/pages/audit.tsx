@@ -12,6 +12,8 @@ interface Alert {
   id: number; projectId: string; moduleName: string; severity: string; label: string;
   note: string | null; firstSeenAt: number; lastSeenAt: number;
   occurrences: number; deviceCount: number; status: number;
+  /** module = 随包分发了什么；behavior = 运行时做了什么。 */
+  kind: string; api: string | null; callCount: number;
 }
 interface Rule {
   id: number; pattern: string; label: string; severity: string;
@@ -26,6 +28,17 @@ const SEVERITY_CLASS: Record<string, string> = {
   critical: "text-red-600 font-semibold",
 };
 const STATUS_LABEL: Record<number, string> = { 0: "待处理", 1: "已确认", 2: "已忽略" };
+const KIND_LABEL: Record<string, string> = { module: "结构", behavior: "动作" };
+/** 敏感 API 的中文名；未知的直接显示原始事件名，不猜。 */
+const API_LABEL: Record<string, string> = {
+  pasteboard_read: "读取剪贴板",
+  advertising_id_read: "读取广告标识 IDFA",
+  vendor_id_read: "读取设备标识 IDFV",
+  carrier_info_read: "读取运营商信息",
+  location_start: "开始采集位置",
+  location_permission_request: "请求位置权限",
+  user_agent_read: "读取 User-Agent",
+};
 
 /**
  * 三方插件审计。客户端只上报「随包分发了哪些镜像」，不带任何结论；
@@ -57,11 +70,29 @@ export default function Page() {
       key: "severity", header: "级别",
       cell: (r) => <span className={SEVERITY_CLASS[r.severity] ?? ""}>{SEVERITY_LABEL[r.severity] ?? r.severity}</span>,
     },
+    {
+      key: "kind", header: "类型",
+      cell: (r) => (
+        <span className={r.kind === "behavior" ? "text-blue-600" : "text-[var(--muted-foreground)]"}>
+          {KIND_LABEL[r.kind] ?? r.kind}
+        </span>
+      ),
+    },
     { key: "moduleName", header: "模块", cell: (r) => <span className="font-medium">{r.moduleName}</span> },
+    {
+      key: "api", header: "行为",
+      // 结构告警没有行为可言，留空而不是编一个。
+      cell: (r) => (r.api ? (API_LABEL[r.api] ?? r.api) : <span className="text-[var(--muted-foreground)]">—</span>),
+    },
     { key: "label", header: "说明", cell: (r) => r.label || "-" },
     { key: "note", header: "备注", cell: (r) => <span className="text-xs text-[var(--muted-foreground)]">{r.note ?? "-"}</span> },
     // 设备数说明影响面，出现次数说明频率——两个都要，只有一个都会误导。
     { key: "deviceCount", header: "影响设备", cell: (r) => <span className="tabular-nums">{r.deviceCount}</span> },
+    // 调用次数只有动作告警有意义：结构是「在不在」，没有频率一说。
+    {
+      key: "callCount", header: "调用次数",
+      cell: (r) => (r.kind === "behavior" ? <span className="tabular-nums">{r.callCount}</span> : <span className="text-[var(--muted-foreground)]">—</span>),
+    },
     { key: "occurrences", header: "上报次数", cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
     { key: "lastSeenAt", header: "最近出现", cell: (r) => (r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : "-") },
     { key: "status", header: "状态", cell: (r) => STATUS_LABEL[r.status] ?? String(r.status) },
@@ -94,7 +125,7 @@ export default function Page() {
       <PageHeader
         eyebrow="PULSE"
         title="插件审计"
-        description="客户端上报随包分发的镜像（应用自身 framework 与三方 SDK），系统库只计数不上报。规则在服务端判定，可随时调整。"
+        description="两类发现：结构（随包分发了哪些镜像）与动作（哪个镜像在运行时调用了敏感 API）。客户端只陈述事实，不携带任何结论；判定在服务端按规则做，可随时调整。"
       />
 
       <Card>
