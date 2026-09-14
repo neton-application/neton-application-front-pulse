@@ -8,7 +8,7 @@ import {
   type DataColumn,
 } from "@neton/application-front-kit";
 
-interface QueueDepth { work: number; retry: number; dead: number; truncatedAt: number }
+interface QueueDepth { work: number; retry: number; processing: number; dead: number; truncatedAt: number }
 interface QueueCounters { enqueued: number; consumed: number; failed: number; dead: number }
 interface PipelineStatus { depth: QueueDepth; counters: QueueCounters; hasDeadLetters: boolean }
 interface Envelope { payload: string; attempts: number; firstSeenMs: number; lastError: string | null }
@@ -61,6 +61,7 @@ export default function Page() {
 
   const cards: Array<[string, string, string]> = [
     ["待处理", truncated(d?.work), "text-[var(--foreground)]"],
+    ["处理中", truncated(d?.processing), d && d.processing > 0 ? "text-blue-600" : "text-[var(--foreground)]"],
     ["重试中", truncated(d?.retry), d && d.retry > 0 ? "text-amber-600" : "text-[var(--foreground)]"],
     ["死信", truncated(d?.dead), d && d.dead > 0 ? "text-red-600" : "text-[var(--foreground)]"],
     ["累计入队", c ? c.enqueued.toLocaleString("en-US") : "…", "text-[var(--muted-foreground)]"],
@@ -73,10 +74,10 @@ export default function Page() {
       <PageHeader
         eyebrow="PULSE"
         title="采集管道"
-        description="客户端批量上报 → msgtrans/HTTP 接入 → Redis 队列 → 消费入库。写入失败的批次会重试，用尽次数后进入死信，可在此重放。"
+        description="客户端批量上报 → msgtrans/HTTP 接入 → Redis 原子领取 → PostgreSQL 入库后确认。写入失败的批次会重试，用尽次数后进入死信，可在此重放。"
       />
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {cards.map(([label, v, cls]) => (
           <div key={label} className="rounded-lg border border-[var(--border)] p-4">
             <div className="text-xs text-[var(--muted-foreground)]">{label}</div>
