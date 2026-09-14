@@ -22,6 +22,7 @@ export default function Page() {
           { key: "name", label: "事件", filter: true },
           { key: "sessionId", label: "会话", format: "mono", filter: true },
           { key: "sourceModule", label: "来源模块", format: "mono" },
+          { key: "sourceImageUuid", label: "镜像 UUID", format: "mono" },
           { key: "attributes", label: "属性", format: "mono" },
         ],
       }}
