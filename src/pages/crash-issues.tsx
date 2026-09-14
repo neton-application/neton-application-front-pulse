@@ -1,0 +1,165 @@
+"use client";
+
+import * as React from "react";
+import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
+import { useQuery, useQueryClient } from "@neton/application-front-runtime/client-context";
+import {
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Textarea,
+  type DataColumn,
+} from "@neton/application-front-kit";
+
+interface Issue {
+  id: number; projectId: string; fingerprint: string; title: string; message: string;
+  appKey: string | null; buildNumber: number | null;
+  firstSeenAt: number; lastSeenAt: number; eventCount: number; deviceCount: number; status: number;
+}
+interface Frame {
+  index: number; runtimeAddress: number; staticAddress: number;
+  symbol: string | null; offset: number | null;
+}
+interface IssueDetail { issue: Issue; frames: Frame[]; symbolicated: boolean }
+interface Page<T> { list: T[]; total: number }
+
+const STATUS_LABEL: Record<number, string> = { 0: "待处理", 1: "处理中", 2: "已解决", 3: "已忽略" };
+
+const hex = (n: number) => `0x${(n >>> 0 === n ? n : n).toString(16)}`;
+
+/**
+ * 崩溃聚合。同一处崩溃归并成一个问题，按影响设备数排序——
+ * 一台设备崩溃一千次，不比一千台设备各崩溃一次更重要。
+ *
+ * 堆栈在读取时符号化，不落库：符号表通常晚于崩溃才上传，而且随时可能被更准的一份替换，
+ * 落库的符号会过期，原始地址不会。
+ */
+export default function Page() {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = React.useState<number | null>(null);
+  const [symbolText, setSymbolText] = React.useState("");
+  const [uploadMsg, setUploadMsg] = React.useState<string | null>(null);
+
+  const issues = useQuery({
+    queryKey: ["pulse-crash-issues"],
+    queryFn: () => apiFetch<Page<Issue>>("/admin/pulse/crash/page?pageSize=100"),
+  });
+  const detail = useQuery({
+    queryKey: ["pulse-crash-detail", selected],
+    queryFn: () => (selected ? apiFetch<IssueDetail>(`/admin/pulse/crash/get/${selected}`) : Promise.resolve(null)),
+    enabled: selected !== null,
+  });
+
+  const setStatus = async (id: number, status: number) => {
+    await apiWrite<void>("/admin/pulse/crash/status", "PUT", { id, status });
+    await queryClient.invalidateQueries({ queryKey: ["pulse-crash-issues"] });
+  };
+
+  const uploadSymbols = async () => {
+    const issue = detail.data?.issue;
+    if (!issue?.appKey || !issue.buildNumber) {
+      setUploadMsg("该问题没有归属的构建号，无法确定符号表属于哪个版本。");
+      return;
+    }
+    const res = await apiWrite<{ loaded: number }>("/admin/pulse/crash/symbols/upload", "POST", {
+      appKey: issue.appKey, buildNumber: issue.buildNumber, text: symbolText,
+    });
+    setUploadMsg(`已载入 ${res.loaded} 个符号。`);
+    setSymbolText("");
+    await queryClient.invalidateQueries({ queryKey: ["pulse-crash-detail"] });
+  };
+
+  const columns: DataColumn<Issue>[] = [
+    { key: "title", header: "崩溃", cell: (r) => <span className="font-medium">{r.title}</span> },
+    { key: "message", header: "信息", cell: (r) => <span className="text-xs">{r.message || "-"}</span> },
+    // 设备数在前：影响面比频率更能决定优先级。
+    { key: "deviceCount", header: "影响设备", cell: (r) => <span className="tabular-nums font-medium">{r.deviceCount}</span> },
+    { key: "eventCount", header: "发生次数", cell: (r) => <span className="tabular-nums">{r.eventCount}</span> },
+    { key: "buildNumber", header: "构建", cell: (r) => (r.buildNumber ?? "-") },
+    { key: "lastSeenAt", header: "最近", cell: (r) => (r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : "-") },
+    { key: "status", header: "状态", cell: (r) => STATUS_LABEL[r.status] ?? String(r.status) },
+    {
+      key: "actions", header: "操作",
+      cell: (r) => (
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => { setSelected(r.id); setUploadMsg(null); }}>堆栈</Button>
+          {r.status !== 2 && <Button variant="outline" onClick={() => void setStatus(r.id, 2)}>标记已解决</Button>}
+          {r.status !== 3 && <Button variant="outline" onClick={() => void setStatus(r.id, 3)}>忽略</Button>}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="PULSE"
+        title="崩溃聚合"
+        description="同一处崩溃归并为一个问题。分组依据是栈顶若干帧的静态地址（已去掉 ASLR 偏移），而不是崩溃信息文本——同一个 bug 的文本常常带着每次不同的地址。"
+      />
+
+      <Card>
+        <CardHeader><CardTitle>问题列表</CardTitle></CardHeader>
+        <CardContent>
+          <DataTable
+            columns={columns}
+            rows={issues.data?.list ?? []}
+            rowKey={(r) => String(r.id)}
+            loading={issues.isLoading}
+            emptyTitle="还没有崩溃"
+            emptyDescription="客户端上报的崩溃与错误会在这里按指纹聚合。"
+          />
+        </CardContent>
+      </Card>
+
+      {selected !== null && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>
+                堆栈 · {detail.data?.issue.title ?? ""}
+                {detail.data && !detail.data.symbolicated && (
+                  <span className="ml-2 text-sm font-normal text-amber-600">未符号化（尚未上传该构建的符号表）</span>
+                )}
+              </CardTitle>
+              <Button variant="outline" onClick={() => setSelected(null)}>关闭</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <pre className="overflow-auto rounded bg-[var(--muted)] p-3 text-xs leading-relaxed">
+                {(detail.data?.frames ?? []).map((f) => (
+                  <div key={f.index}>
+                    <span className="text-[var(--muted-foreground)]">{`#${String(f.index).padStart(2, " ")} `}</span>
+                    <span className="text-[var(--muted-foreground)]">{hex(f.staticAddress)} </span>
+                    {f.symbol
+                      ? <span>{f.symbol}{f.offset != null ? ` + ${f.offset}` : ""}</span>
+                      // 跨镜像的帧不做解析：给一个看起来对、其实指错代码的函数名，比给不出名字更糟。
+                      : <span className="text-[var(--muted-foreground)]">{"<其他镜像>"}</span>}
+                  </div>
+                ))}
+                {detail.isLoading && "加载中…"}
+              </pre>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">
+                  上传符号表（构建 {detail.data?.issue.buildNumber ?? "-"}）
+                </div>
+                <div className="text-xs text-[var(--muted-foreground)]">
+                  粘贴 <code>nm -n &lt;binary&gt;</code> 的输出。符号按构建存储，重新上传会整表替换。
+                </div>
+                <Textarea
+                  rows={6}
+                  value={symbolText}
+                  onChange={(e) => setSymbolText(e.target.value)}
+                  placeholder="0000000100001000 T _myFunction"
+                />
+                <div className="flex items-center gap-3">
+                  <Button disabled={!symbolText.trim()} onClick={() => void uploadSymbols()}>载入符号</Button>
+                  {uploadMsg && <span className="text-sm text-[var(--muted-foreground)]">{uploadMsg}</span>}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
