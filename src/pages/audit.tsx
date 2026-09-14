@@ -13,7 +13,7 @@ interface Alert {
   note: string | null; firstSeenAt: number; lastSeenAt: number;
   occurrences: number; deviceCount: number; status: number;
   /** module = 随包分发了什么；behavior = 运行时做了什么。 */
-  kind: string; api: string | null; callCount: number;
+  kind: string; api: string | null; callCount: number; detail: string | null;
 }
 interface Rule {
   id: number; pattern: string; label: string; severity: string;
@@ -36,6 +36,9 @@ const API_LABEL: Record<string, string> = {
   vendor_id_read: "读取设备标识 IDFV",
   carrier_info_read: "读取运营商信息",
   location_start: "开始采集位置",
+  photo_library_status_read: "查询相册权限",
+  photo_library_permission_request: "请求相册权限",
+  network_request: "发起网络请求",
   location_permission_request: "请求位置权限",
   user_agent_read: "读取 User-Agent",
 };
@@ -83,6 +86,11 @@ export default function Page() {
       key: "api", header: "行为",
       // 结构告警没有行为可言，留空而不是编一个。
       cell: (r) => (r.api ? (API_LABEL[r.api] ?? r.api) : <span className="text-[var(--muted-foreground)]">—</span>),
+    },
+    {
+      key: "detail", header: "目的地 / 明细",
+      // 网络请求的目的地已在客户端剥掉 query 与 fragment；这里存的是端点，不是凭证。
+      cell: (r) => (r.detail ? <code className="text-xs">{r.detail}</code> : <span className="text-[var(--muted-foreground)]">—</span>),
     },
     { key: "label", header: "说明", cell: (r) => r.label || "-" },
     { key: "note", header: "备注", cell: (r) => <span className="text-xs text-[var(--muted-foreground)]">{r.note ?? "-"}</span> },
