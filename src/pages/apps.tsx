@@ -18,7 +18,7 @@ export default function Page() {
         eyebrow: "PULSE",
         title: "应用管理",
         description:
-          "按平台登记应用。客户端启动时携带平台、包名与构建号来检查更新；应用停用后不再回答更新检查。",
+          "后台自动生成 App ID。默认校验登记包名，也可为内部重签包配置允许名单或放开包名。",
         endpoint: "/pulse/app",
         listPath: "page",
         permissions: {
@@ -44,9 +44,9 @@ export default function Page() {
           },
           {
             key: "appKey",
-            label: "应用标识",
-            required: true,
-            placeholder: "与 SDK 里的 projectId 一致",
+            label: "App ID",
+            editable: false,
+            placeholder: "创建后由后台自动生成，写入 PulseKit 配置",
             format: "mono",
           },
           {
@@ -54,6 +54,25 @@ export default function Page() {
             label: "包名",
             placeholder: "iOS bundle id / Android applicationId；Web 可留空",
             format: "mono",
+          },
+          {
+            key: "packagePolicy",
+            label: "包名策略",
+            type: "select",
+            required: true,
+            defaultValue: "strict",
+            options: [
+              { label: "严格匹配登记包名", value: "strict" },
+              { label: "登记包名 + 允许名单", value: "allowlist" },
+              { label: "允许任意包名", value: "any" },
+            ],
+          },
+          {
+            key: "allowedPackages",
+            label: "额外允许包名",
+            type: "textarea",
+            placeholder: "仅允许名单策略使用，逗号或换行分隔",
+            table: false,
           },
           { key: "liveVersion", label: "线上版本", editable: false },
           { key: "liveBuild", label: "线上构建号", editable: false },
