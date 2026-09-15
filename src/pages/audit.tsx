@@ -4,7 +4,7 @@ import * as React from "react";
 import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQuery, useQueryClient } from "@neton/application-front-runtime/client-context";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader,
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Select,
   type DataColumn,
 } from "@neton/application-front-kit";
 
@@ -20,6 +20,16 @@ interface Rule {
   note: string | null; appId: number | null; status: number;
 }
 interface Page<T> { list: T[]; total: number }
+interface AppRow { id: number; name: string; platform: string; appKey: string }
+interface EvidenceItem {
+  category: string; name: string; moduleName: string | null; detail: string | null;
+  occurrences: number; devices: number; firstSeenAt: number; lastSeenAt: number;
+}
+interface Evidence {
+  projectId: string | null; days: number;
+  modules: EvidenceItem[]; networkDestinations: EvidenceItem[];
+  sensitiveApis: EvidenceItem[]; permissions: EvidenceItem[];
+}
 
 const SEVERITY_LABEL: Record<string, string> = { info: "记录", warn: "关注", critical: "严重" };
 const SEVERITY_CLASS: Record<string, string> = {
@@ -53,10 +63,26 @@ const API_LABEL: Record<string, string> = {
 export default function Page() {
   const queryClient = useQueryClient();
   const [onlyOpen, setOnlyOpen] = React.useState(true);
+  const [projectId, setProjectId] = React.useState("");
+  const [days, setDays] = React.useState("7");
+  const [evidenceKind, setEvidenceKind] = React.useState<keyof Pick<Evidence, "modules" | "networkDestinations" | "sensitiveApis" | "permissions">>("modules");
+
+  const apps = useQuery({
+    queryKey: ["pulse-audit-apps"],
+    queryFn: () => apiFetch<Page<AppRow>>("/admin/pulse/app/page?pageSize=200"),
+  });
+  const evidence = useQuery({
+    queryKey: ["pulse-audit-evidence", projectId, days],
+    queryFn: () => apiFetch<Evidence>(
+      `/admin/pulse/audit/evidence?days=${days}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+    ),
+  });
 
   const alerts = useQuery({
-    queryKey: ["pulse-audit-alerts", onlyOpen],
-    queryFn: () => apiFetch<Page<Alert>>(`/admin/pulse/audit/alert/page?pageSize=100${onlyOpen ? "&status=0" : ""}`),
+    queryKey: ["pulse-audit-alerts", onlyOpen, projectId],
+    queryFn: () => apiFetch<Page<Alert>>(
+      `/admin/pulse/audit/alert/page?pageSize=100${onlyOpen ? "&status=0" : ""}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+    ),
   });
   const rules = useQuery({
     queryKey: ["pulse-audit-rules"],
@@ -128,13 +154,79 @@ export default function Page() {
     { key: "status", header: "状态", cell: (r) => (r.status === 1 ? "启用" : "停用") },
   ];
 
+  const evidenceColumns: DataColumn<EvidenceItem>[] = [
+    { key: "name", header: "证据", cell: (r) => <span className="font-medium">{API_LABEL[r.name] ?? r.name}</span> },
+    { key: "moduleName", header: "来源模块", cell: (r) => <code className="text-xs">{r.moduleName ?? "—"}</code> },
+    {
+      key: "detail", header: "目的地 / 声明 / 调用",
+      cell: (r) => <code className="block max-w-3xl break-all text-xs">{r.detail ?? "—"}</code>,
+    },
+    { key: "devices", header: "设备", cell: (r) => <span className="tabular-nums">{r.devices}</span> },
+    { key: "occurrences", header: "次数", cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
+    { key: "lastSeenAt", header: "最近观察", cell: (r) => new Date(r.lastSeenAt).toLocaleString("zh-CN") },
+  ];
+
+  const evidenceGroups: Array<[typeof evidenceKind, string]> = [
+    ["modules", "插件与动态库"],
+    ["networkDestinations", "联网地址"],
+    ["sensitiveApis", "敏感 API"],
+    ["permissions", "权限与声明"],
+  ];
+  const currentEvidence = evidence.data?.[evidenceKind] ?? [];
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="PULSE"
-        title="安全审计"
-        description="两类发现：结构（随包分发了哪些镜像）与动作（哪个镜像在运行时调用了敏感 API）。客户端只陈述事实，不携带任何结论；判定在服务端按规则做，可随时调整。"
-      />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <PageHeader
+          eyebrow="PULSE"
+          title="安全审计"
+          description="先展示客户端观察到的证据，再由规则判断风险。没有规则也不会隐藏插件、联网地址、敏感 API 和权限使用。"
+        />
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
+            应用
+            <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">全部应用</option>
+              {(apps.data?.list ?? []).map((app) => (
+                <option key={app.id} value={app.appKey}>{app.name} · {app.platform}</option>
+              ))}
+            </Select>
+          </label>
+          <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
+            时间范围
+            <Select value={days} onChange={(e) => setDays(e.target.value)}>
+              <option value="1">近 24 小时</option>
+              <option value="7">近 7 天</option>
+              <option value="30">近 30 天</option>
+            </Select>
+          </label>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>观察证据</CardTitle>
+            <div className="flex flex-wrap gap-2">
+              {evidenceGroups.map(([key, label]) => (
+                <Button key={key} variant={evidenceKind === key ? "default" : "outline"} onClick={() => setEvidenceKind(key)}>
+                  {label} · {evidence.data?.[key].length ?? 0}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={evidenceColumns}
+            rows={currentEvidence}
+            rowKey={(r) => `${r.category}-${r.name}-${r.moduleName ?? ""}-${r.detail ?? ""}`}
+            loading={evidence.isLoading}
+            emptyTitle="当前范围没有这类证据"
+            emptyDescription="这表示尚未观察到，并不代表对应能力已通过审计。"
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
