@@ -7,6 +7,7 @@ import {
   Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Select,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface VersionStats {
   buildNumber: number; appVersion: string | null;
@@ -63,22 +64,25 @@ const regressionColumns: DataColumn<IssueOnBuild>[] = [
  */
 export default function Page() {
   const [build, setBuild] = React.useState<string>("");
+  const { scope, setScope } = usePulseScope();
 
   const versions = useQuery({
-    queryKey: ["pulse-versions"],
-    queryFn: () => apiFetch<VersionStats[]>("/admin/pulse/version/list"),
+    queryKey: ["pulse-versions", scope.projectId, scope.days],
+    queryFn: () => apiFetch<VersionStats[]>(`/admin/pulse/version/list?${pulseScopeParams(scope)}`),
   });
 
   // 默认选最新构建：打开这一页多半是刚发完版想看它怎么样。
   React.useEffect(() => {
-    if (!build && versions.data && versions.data.length > 0) {
+    if (versions.data && versions.data.length > 0 && !versions.data.some((v) => String(v.buildNumber) === build)) {
       setBuild(String(versions.data[0].buildNumber));
+    } else if (versions.data?.length === 0 && build) {
+      setBuild("");
     }
   }, [versions.data, build]);
 
   const comparison = useQuery({
-    queryKey: ["pulse-version-compare", build],
-    queryFn: () => (build ? apiFetch<Comparison>(`/admin/pulse/version/compare?buildNumber=${build}`) : Promise.resolve(null)),
+    queryKey: ["pulse-version-compare", build, scope.projectId, scope.days],
+    queryFn: () => (build ? apiFetch<Comparison>(`/admin/pulse/version/compare?buildNumber=${build}&${pulseScopeParams(scope)}`) : Promise.resolve(null)),
     enabled: build !== "",
   });
 
@@ -90,6 +94,7 @@ export default function Page() {
         eyebrow="PULSE"
         title="版本分析"
         description="按构建号聚合。构建号是客户端上报的单调计数（iOS 取 CFBundleVersion，Android 取 versionCode），版本名只用于展示。"
+        actions={<PulseScopeSelector scope={scope} onChange={setScope} />}
       />
 
       <Card>

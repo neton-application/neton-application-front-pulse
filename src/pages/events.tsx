@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { ResourcePage } from "@neton/application-front-resource";
+import { PulseScopeSelector, usePulseScope } from "../pulse-scope";
 
 /** 事件分析（U-App 类）：全部上报事件，可按类型 / 事件名 / 会话筛选。只读。 */
 export default function Page() {
+  const { scope, setScope } = usePulseScope();
   return (
     <ResourcePage
       config={{
@@ -16,6 +18,8 @@ export default function Page() {
         listPath: "page",
         readOnly: true,
         permissions: { page: "pulse:event:list" },
+        fixedFilters: { projectId: scope.projectId, days: scope.days },
+        headerActions: <PulseScopeSelector scope={scope} onChange={setScope} />,
         fields: [
           { key: "ts", label: "时间", format: "date" },
           { key: "kind", label: "类型", filter: true },

@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { ResourcePage } from "@neton/application-front-resource";
+import { PulseScopeSelector, usePulseScope } from "../pulse-scope";
 
 /** 崩溃分析（Bugly / U-APM 类）：默认看 Crash，可切到 Error。堆栈/消息在属性里。只读。 */
 export default function Page() {
+  const { scope, setScope } = usePulseScope();
   return (
     <ResourcePage
       config={{
@@ -16,6 +18,8 @@ export default function Page() {
         listPath: "page",
         readOnly: true,
         permissions: { page: "pulse:apm:list" },
+        fixedFilters: { projectId: scope.projectId, days: scope.days },
+        headerActions: <PulseScopeSelector scope={scope} onChange={setScope} />,
         initialFilters: { kind: "Crash" },
         fields: [
           { key: "ts", label: "时间", format: "date" },

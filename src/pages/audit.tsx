@@ -4,9 +4,10 @@ import * as React from "react";
 import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQuery, useQueryClient } from "@neton/application-front-runtime/client-context";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Select,
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface Alert {
   id: number; projectId: string; moduleName: string; severity: string; label: string;
@@ -20,7 +21,6 @@ interface Rule {
   note: string | null; appId: number | null; status: number;
 }
 interface Page<T> { list: T[]; total: number }
-interface AppRow { id: number; name: string; platform: string; appKey: string }
 interface EvidenceItem {
   category: string; name: string; moduleName: string | null; detail: string | null;
   occurrences: number; devices: number; firstSeenAt: number; lastSeenAt: number;
@@ -63,25 +63,18 @@ const API_LABEL: Record<string, string> = {
 export default function Page() {
   const queryClient = useQueryClient();
   const [onlyOpen, setOnlyOpen] = React.useState(true);
-  const [projectId, setProjectId] = React.useState("");
-  const [days, setDays] = React.useState("7");
+  const { scope, setScope } = usePulseScope();
   const [evidenceKind, setEvidenceKind] = React.useState<keyof Pick<Evidence, "modules" | "networkDestinations" | "sensitiveApis" | "permissions">>("modules");
 
-  const apps = useQuery({
-    queryKey: ["pulse-audit-apps"],
-    queryFn: () => apiFetch<Page<AppRow>>("/admin/pulse/app/page?pageSize=200"),
-  });
   const evidence = useQuery({
-    queryKey: ["pulse-audit-evidence", projectId, days],
-    queryFn: () => apiFetch<Evidence>(
-      `/admin/pulse/audit/evidence?days=${days}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
-    ),
+    queryKey: ["pulse-audit-evidence", scope.projectId, scope.days],
+    queryFn: () => apiFetch<Evidence>(`/admin/pulse/audit/evidence?${pulseScopeParams(scope)}`),
   });
 
   const alerts = useQuery({
-    queryKey: ["pulse-audit-alerts", onlyOpen, projectId],
+    queryKey: ["pulse-audit-alerts", onlyOpen, scope.projectId],
     queryFn: () => apiFetch<Page<Alert>>(
-      `/admin/pulse/audit/alert/page?pageSize=100${onlyOpen ? "&status=0" : ""}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+      `/admin/pulse/audit/alert/page?pageSize=100${onlyOpen ? "&status=0" : ""}${scope.projectId ? `&projectId=${encodeURIComponent(scope.projectId)}` : ""}`,
     ),
   });
   const rules = useQuery({
@@ -182,25 +175,7 @@ export default function Page() {
           title="安全审计"
           description="先展示客户端观察到的证据，再由规则判断风险。没有规则也不会隐藏插件、联网地址、敏感 API 和权限使用。"
         />
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
-            应用
-            <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              <option value="">全部应用</option>
-              {(apps.data?.list ?? []).map((app) => (
-                <option key={app.id} value={app.appKey}>{app.name} · {app.platform}</option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
-            时间范围
-            <Select value={days} onChange={(e) => setDays(e.target.value)}>
-              <option value="1">近 24 小时</option>
-              <option value="7">近 7 天</option>
-              <option value="30">近 30 天</option>
-            </Select>
-          </label>
-        </div>
+        <PulseScopeSelector scope={scope} onChange={setScope} />
       </div>
 
       <Card>

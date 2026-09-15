@@ -7,6 +7,7 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Textarea,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface Issue {
   id: number; projectId: string; fingerprint: string; title: string; message: string;
@@ -36,10 +37,11 @@ export default function Page() {
   const [selected, setSelected] = React.useState<number | null>(null);
   const [symbolText, setSymbolText] = React.useState("");
   const [uploadMsg, setUploadMsg] = React.useState<string | null>(null);
+  const { scope, setScope } = usePulseScope();
 
   const issues = useQuery({
-    queryKey: ["pulse-crash-issues"],
-    queryFn: () => apiFetch<Page<Issue>>("/admin/pulse/crash/page?pageSize=100"),
+    queryKey: ["pulse-crash-issues", scope.projectId, scope.days],
+    queryFn: () => apiFetch<Page<Issue>>(`/admin/pulse/crash/page?pageSize=100&${pulseScopeParams(scope)}`),
   });
   const detail = useQuery({
     queryKey: ["pulse-crash-detail", selected],
@@ -93,6 +95,7 @@ export default function Page() {
         eyebrow="PULSE"
         title="崩溃分析"
         description="同一处崩溃归并为一个问题。分组依据是栈顶若干帧的静态地址（已去掉 ASLR 偏移），而不是崩溃信息文本——同一个 bug 的文本常常带着每次不同的地址。"
+        actions={<PulseScopeSelector scope={scope} onChange={(next) => { setSelected(null); setScope(next); }} />}
       />
 
       <Card>

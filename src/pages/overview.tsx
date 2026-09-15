@@ -7,6 +7,7 @@ import {
   Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface KindCount { kind: string; count: number }
 interface NameCount { name: string; count: number }
@@ -18,8 +19,6 @@ interface DomainCount { domain: string; count: number }
 interface ActiveTrendPoint {
   date: string; activeUsers: number; newUsers: number; sessions: number; launches: number;
 }
-interface PulseApp { id: number; name: string; platform: string; appKey: string }
-interface PageResponse<T> { list: T[]; total: number }
 interface PulseOverview {
   totalEvents: number; totalUsers: number; identifiedUsers: number; sessions: number;
   todayActiveUsers: number; todayNewUsers: number; todaySessions: number; todayLaunches: number;
@@ -47,17 +46,14 @@ const issueColumns: DataColumn<PulseEvent>[] = [
 ];
 
 export default function Page() {
-  const [projectId, setProjectId] = React.useState("");
-  const apps = useQuery({
-    queryKey: ["pulse-overview-apps"],
-    queryFn: () => apiFetch<PageResponse<PulseApp>>("/admin/pulse/app/page?pageSize=200"),
-  });
+  const { scope, setScope } = usePulseScope();
   const { data, isLoading } = useQuery({
-    queryKey: ["pulse-overview", projectId],
+    queryKey: ["pulse-overview", scope.projectId, scope.days],
     queryFn: () => apiFetch<PulseOverview>(
-      `/admin/pulse/stats/overview?days=7${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+      `/admin/pulse/stats/overview?${pulseScopeParams(scope)}`,
     ),
   });
+  const scopeParams = pulseScopeParams(scope);
 
   const cards: Array<[string, number | undefined, string, string]> = [
     ["累计用户", data?.totalUsers, "text-[var(--foreground)]", "按持久化设备标识去重"],
@@ -74,19 +70,14 @@ export default function Page() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <PageHeader eyebrow="PULSE" title="总览" description="用户活跃、使用趋势和应用质量的整体情况。" />
-        <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
-          应用
-          <select
-            className="min-w-52 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)]"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-          >
-            <option value="">全部应用</option>
-            {(apps.data?.list ?? []).map((app) => (
-              <option key={app.id} value={app.appKey}>{app.name} · {app.platform}</option>
-            ))}
-          </select>
-        </label>
+        <PulseScopeSelector scope={scope} onChange={setScope} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-sm">
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/events?${scopeParams}`}>查看事件</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/versions?${scopeParams}`}>版本分析</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/crash-issues?${scopeParams}`}>崩溃分析</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/performance?${scopeParams}`}>性能数据</a>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -104,7 +95,7 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>近 7 日活跃趋势</CardTitle>
+            <CardTitle>{scope.days === "1" ? "今日" : `近 ${scope.days} 日`}活跃趋势</CardTitle>
             <span className="text-xs text-[var(--muted-foreground)]">统计时区：{data?.timezone ?? "—"}</span>
           </div>
         </CardHeader>
