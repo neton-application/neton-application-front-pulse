@@ -1,9 +1,26 @@
 "use client";
 
 import * as React from "react";
-import { apiWrite } from "@neton/application-front-runtime/client";
+import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQueryClient } from "@neton/application-front-runtime/client-context";
 import { ResourcePage } from "@neton/application-front-resource";
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@neton/application-front-kit";
+
+interface SigningCertificate {
+  sha256: string; commonName: string | null; organization: string | null; organizationalUnit: string | null;
+}
+interface ArtifactImage {
+  relativePath: string; architecture: string; imageUuid: string | null; textSha256: string; textSize: number;
+  hasSwiftMetadata: boolean; swiftSymbolCount: number; cppSymbolCount: number; cSymbolCount: number;
+  importedSymbolCount: number; symbolsTruncated: boolean; swiftSymbols: string[]; cppSymbols: string[];
+  cSymbols: string[]; importedSymbols: string[]; linkedLibraries: string[]; signatureStatus: string;
+  signingCertificates: SigningCertificate[];
+}
+interface ArtifactReport {
+  id: number; versionId: number; fileName: string; fileSize: number; archiveSha256: string; format: string;
+  imageCount: number; swiftSymbolCount: number; cppSymbolCount: number; cSymbolCount: number;
+  importedSymbolCount: number; signedImageCount: number; createdAt: number; images: ArtifactImage[];
+}
 
 /**
  * 某个应用的版本列表。appId 从查询串带入——版本永远属于一个应用，不存在跨应用的版本列表。
@@ -15,6 +32,11 @@ export default function Page() {
   const queryClient = useQueryClient();
   const [appId, setAppId] = React.useState<string>("");
   const [appName, setAppName] = React.useState<string>("");
+  const [selectedVersion, setSelectedVersion] = React.useState<{ id: number; name: string } | null>(null);
+  const [artifact, setArtifact] = React.useState<File | null>(null);
+  const [report, setReport] = React.useState<ArtifactReport | null>(null);
+  const [artifactBusy, setArtifactBusy] = React.useState(false);
+  const [artifactError, setArtifactError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -30,6 +52,36 @@ export default function Page() {
     [queryClient],
   );
 
+  const openArtifact = React.useCallback(async (id: number, name: string) => {
+    setSelectedVersion({ id, name });
+    setArtifact(null);
+    setArtifactError(null);
+    try {
+      setReport(await apiFetch<ArtifactReport | null>(`/admin/pulse/artifact/get?versionId=${id}`));
+    } catch (error) {
+      setReport(null);
+      setArtifactError(error instanceof Error ? error.message : "读取分析结果失败");
+    }
+  }, []);
+
+  const analyzeArtifact = React.useCallback(async () => {
+    if (!selectedVersion || !artifact) return;
+    setArtifactBusy(true);
+    setArtifactError(null);
+    try {
+      const params = new URLSearchParams({ versionId: String(selectedVersion.id), fileName: artifact.name });
+      setReport(await apiFetch<ArtifactReport>(`/admin/pulse/artifact/analyze?${params}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: artifact,
+      }));
+    } catch (error) {
+      setArtifactError(error instanceof Error ? error.message : "制品分析失败");
+    } finally {
+      setArtifactBusy(false);
+    }
+  }, [artifact, selectedVersion]);
+
   if (!appId) {
     return (
       <div className="p-6 text-sm text-[var(--muted-foreground)]">
@@ -39,6 +91,7 @@ export default function Page() {
   }
 
   return (
+    <div className="space-y-4">
     <ResourcePage
       config={{
         resourceKey: "pulse-app-version",
@@ -95,9 +148,102 @@ export default function Page() {
             Number(record.published) === 1
               ? { label: "下架", kind: "disable", onClick: () => void setPublished(record.id, false) }
               : { label: "发布", kind: "enable", tone: "positive", onClick: () => void setPublished(record.id, true) },
+            {
+              label: "制品分析",
+              kind: "upload",
+              onClick: () => void openArtifact(Number(record.id), String(record.versionName ?? record.id)),
+            },
           ],
         }),
       }}
     />
+    {selectedVersion && (
+      <Card>
+        <CardHeader>
+          <CardTitle>最终制品静态分析 · {selectedVersion.name}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="file"
+                accept=".ipa,.zip,application/zip"
+                onChange={(event) => setArtifact(event.target.files?.[0] ?? null)}
+                className="max-w-full text-sm file:mr-3 file:rounded-md file:border file:border-[var(--border)] file:bg-transparent file:px-3 file:py-2"
+              />
+              <Button disabled={!artifact || artifactBusy} onClick={() => void analyzeArtifact()}>
+                {artifactBusy ? "正在分析…" : "上传并分析"}
+              </Button>
+              <Button variant="outline" onClick={() => setSelectedVersion(null)}>关闭</Button>
+            </div>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              上传最终签名的 IPA 或压缩后的 XCArchive。服务端只解析文件，不执行其中代码；重新上传会替换该版本的旧报告。
+            </p>
+            {artifactError && <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600">{artifactError}</div>}
+            {report ? <ArtifactReportView report={report} /> : (
+              <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-sm text-[var(--muted-foreground)]">
+                这个版本还没有静态分析报告。
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    )}
+    </div>
   );
+}
+
+function ArtifactReportView({ report }: { report: ArtifactReport }) {
+  const metrics = [
+    ["Mach-O", report.imageCount], ["已签名镜像", report.signedImageCount],
+    ["Swift 符号", report.swiftSymbolCount], ["C++ 符号", report.cppSymbolCount],
+    ["C 符号", report.cSymbolCount], ["导入符号", report.importedSymbolCount],
+  ] as const;
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {metrics.map(([label, value]) => <div key={label} className="rounded-md border border-[var(--border)] p-3">
+          <div className="text-xs text-[var(--muted-foreground)]">{label}</div>
+          <div className="text-xl font-semibold tabular-nums">{value}</div>
+        </div>)}
+      </div>
+      <div className="rounded-md border border-[var(--border)] p-3 text-xs">
+        <div><span className="text-[var(--muted-foreground)]">文件：</span>{report.fileName} · {(report.fileSize / 1024 / 1024).toFixed(1)} MiB</div>
+        <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">归档 SHA-256：</span>{report.archiveSha256}</div>
+        <div><span className="text-[var(--muted-foreground)]">分析时间：</span>{new Date(report.createdAt).toLocaleString("zh-CN")}</div>
+      </div>
+      <div className="space-y-2">
+        {report.images.map((image, index) => <details key={`${image.relativePath}-${image.architecture}-${index}`} className="rounded-md border border-[var(--border)] p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            {image.relativePath} · {image.architecture} · {signatureLabel(image.signatureStatus)}
+          </summary>
+          <div className="mt-3 grid gap-2 text-xs">
+            <div className="break-all"><span className="text-[var(--muted-foreground)]">UUID：</span>{image.imageUuid ?? "无"}</div>
+            <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">__TEXT SHA-256：</span>{image.textSha256}</div>
+            <div>Swift metadata：{image.hasSwiftMetadata ? "有" : "无"}；Swift {image.swiftSymbolCount} / C++ {image.cppSymbolCount} / C {image.cSymbolCount} / 导入 {image.importedSymbolCount}</div>
+            <EvidenceList title="签名证书" values={image.signingCertificates.map((cert) => `${cert.commonName ?? "未知主体"} · ${cert.organizationalUnit ?? cert.organization ?? "-"} · ${cert.sha256}`)} />
+            <EvidenceList title="依赖库" values={image.linkedLibraries} />
+            <EvidenceList title="导入符号" values={image.importedSymbols} />
+            <EvidenceList title="Swift 符号" values={image.swiftSymbols} />
+            <EvidenceList title="C++ 符号" values={image.cppSymbols} />
+            <EvidenceList title="C 符号" values={image.cSymbols} />
+            {image.symbolsTruncated && <div className="text-amber-600">符号很多，页面证据已截断；顶部计数仍是完整数量。</div>}
+          </div>
+        </details>)}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceList({ title, values }: { title: string; values: string[] }) {
+  if (values.length === 0) return null;
+  return <details><summary className="cursor-pointer text-[var(--muted-foreground)]">{title}（{values.length}）</summary>
+    <div className="mt-1 max-h-48 overflow-auto rounded bg-black/5 p-2 font-mono dark:bg-white/5">
+      {values.map((value, index) => <div key={`${value}-${index}`} className="break-all">{value}</div>)}
+    </div>
+  </details>;
+}
+
+function signatureLabel(status: string): string {
+  return ({ signed: "证书签名", adhoc: "临时签名", unsigned: "未签名", invalid: "签名异常" } as Record<string, string>)[status] ?? status;
 }
