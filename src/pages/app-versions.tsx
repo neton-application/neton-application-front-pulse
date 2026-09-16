@@ -28,7 +28,7 @@ interface ArtifactReport {
   id: number; versionId: number; fileName: string; fileSize: number; archiveSha256: string; format: string;
   imageCount: number; swiftSymbolCount: number; cppSymbolCount: number; cSymbolCount: number;
   importedSymbolCount: number; signedImageCount: number; createdAt: number; images: ArtifactImage[];
-  runtimeBuildNumber: number | null; runtimeEvidenceCount: number;
+  runtimeBuildNumber: number | null; runtimeEvidenceCount: number; runtimeEvidenceTruncated: boolean;
 }
 
 /**
@@ -223,6 +223,9 @@ function ArtifactReportView({ report }: { report: ArtifactReport }) {
         <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">归档 SHA-256：</span>{report.archiveSha256}</div>
         <div><span className="text-[var(--muted-foreground)]">分析时间：</span>{new Date(report.createdAt).toLocaleString("zh-CN")}</div>
       </div>
+      {report.runtimeEvidenceTruncated && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700">
+        运行时证据分组超过 1000 条，本页展示高频且最近的 1000 条；原始事件仍完整保留。
+      </div>}
       <div className="space-y-2">
         {report.images.map((image, index) => <details key={`${image.relativePath}-${image.architecture}-${index}`} className="rounded-md border border-[var(--border)] p-3">
           <summary className="cursor-pointer text-sm font-medium">
