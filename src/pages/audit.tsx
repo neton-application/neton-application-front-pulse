@@ -23,6 +23,7 @@ interface Rule {
 interface Page<T> { list: T[]; total: number }
 interface EvidenceItem {
   category: string; name: string; moduleName: string | null; detail: string | null;
+  imageUuid: string | null; callerSymbol: string | null; stackFingerprint: string | null;
   occurrences: number; devices: number; firstSeenAt: number; lastSeenAt: number;
 }
 interface Evidence {
@@ -51,6 +52,21 @@ const API_LABEL: Record<string, string> = {
   network_request: "发起网络请求",
   location_permission_request: "请求位置权限",
   user_agent_read: "读取 User-Agent",
+  user_defaults_read: "读取 UserDefaults",
+  user_defaults_write: "写入 UserDefaults",
+  http_cookie_read: "读取 HTTP Cookie",
+  camera_microphone_permission_request: "请求相机或麦克风权限",
+  microphone_permission_request: "请求麦克风权限",
+  contacts_permission_request: "请求通讯录权限",
+  tracking_permission_request: "请求跟踪权限",
+  notification_permission_request: "请求通知权限",
+  calendar_reminders_permission_request: "请求日历或提醒事项权限",
+  calendar_permission_request: "请求日历权限",
+  reminders_permission_request: "请求提醒事项权限",
+  health_permission_request: "请求健康数据权限",
+  webview_message_bridge_installed: "安装 WebView 消息桥",
+  webview_script_injected: "注入 WebView 脚本",
+  webview_javascript_evaluated: "执行 WebView JavaScript",
 };
 
 /**
@@ -151,8 +167,21 @@ export default function Page() {
     { key: "name", header: "证据", cell: (r) => <span className="font-medium">{API_LABEL[r.name] ?? r.name}</span> },
     { key: "moduleName", header: "来源模块", cell: (r) => <code className="text-xs">{r.moduleName ?? "—"}</code> },
     {
+      key: "callerSymbol", header: "插件内部调用点",
+      cell: (r) => <code className="block max-w-xl break-all text-xs">{r.callerSymbol ?? "—"}</code>,
+    },
+    {
       key: "detail", header: "目的地 / 声明 / 调用",
       cell: (r) => <code className="block max-w-3xl break-all text-xs">{r.detail ?? "—"}</code>,
+    },
+    {
+      key: "fingerprint", header: "二进制 / 调用链",
+      cell: (r) => (
+        <div className="space-y-1 font-mono text-[11px]">
+          <div>{r.imageUuid ? `UUID ${r.imageUuid}` : "UUID —"}</div>
+          <div>{r.stackFingerprint ? `stack#${r.stackFingerprint}` : "stack —"}</div>
+        </div>
+      ),
     },
     { key: "devices", header: "设备", cell: (r) => <span className="tabular-nums">{r.devices}</span> },
     { key: "occurrences", header: "次数", cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
@@ -195,7 +224,7 @@ export default function Page() {
           <DataTable
             columns={evidenceColumns}
             rows={currentEvidence}
-            rowKey={(r) => `${r.category}-${r.name}-${r.moduleName ?? ""}-${r.detail ?? ""}`}
+            rowKey={(r) => `${r.category}-${r.name}-${r.moduleName ?? ""}-${r.stackFingerprint ?? ""}-${r.detail ?? ""}`}
             loading={evidence.isLoading}
             emptyTitle="当前范围没有这类证据"
             emptyDescription="这表示尚未观察到，并不代表对应能力已通过审计。"
