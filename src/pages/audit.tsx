@@ -24,6 +24,7 @@ interface Page<T> { list: T[]; total: number }
 interface EvidenceItem {
   category: string; name: string; moduleName: string | null; detail: string | null;
   imageUuid: string | null; callerSymbol: string | null; stackFingerprint: string | null;
+  callPath: string | null;
   occurrences: number; devices: number; firstSeenAt: number; lastSeenAt: number;
 }
 interface Evidence {
@@ -168,7 +169,12 @@ export default function Page() {
     { key: "moduleName", header: "来源模块", cell: (r) => <code className="text-xs">{r.moduleName ?? "—"}</code> },
     {
       key: "callerSymbol", header: "插件内部调用点",
-      cell: (r) => <code className="block max-w-xl break-all text-xs">{r.callerSymbol ?? "—"}</code>,
+      cell: (r) => (
+        <div className="max-w-2xl space-y-1 font-mono text-xs">
+          <div className="break-all">{r.callerSymbol ?? "—"}</div>
+          {r.callPath && <div className="break-all text-[11px] text-[var(--muted-foreground)]">{r.callPath}</div>}
+        </div>
+      ),
     },
     {
       key: "detail", header: "目的地 / 声明 / 调用",
