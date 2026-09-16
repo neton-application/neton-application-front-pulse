@@ -28,7 +28,7 @@ interface EvidenceItem {
 }
 interface Evidence {
   projectId: string | null; days: number;
-  modules: EvidenceItem[]; networkDestinations: EvidenceItem[];
+  modules: EvidenceItem[]; internalMethods: EvidenceItem[]; networkDestinations: EvidenceItem[];
   sensitiveApis: EvidenceItem[]; permissions: EvidenceItem[];
 }
 
@@ -80,7 +80,7 @@ export default function Page() {
   const queryClient = useQueryClient();
   const [onlyOpen, setOnlyOpen] = React.useState(true);
   const { scope, setScope } = usePulseScope();
-  const [evidenceKind, setEvidenceKind] = React.useState<keyof Pick<Evidence, "modules" | "networkDestinations" | "sensitiveApis" | "permissions">>("modules");
+  const [evidenceKind, setEvidenceKind] = React.useState<keyof Pick<Evidence, "modules" | "internalMethods" | "networkDestinations" | "sensitiveApis" | "permissions">>("modules");
 
   const evidence = useQuery({
     queryKey: ["pulse-audit-evidence", scope.projectId, scope.days],
@@ -190,6 +190,7 @@ export default function Page() {
 
   const evidenceGroups: Array<[typeof evidenceKind, string]> = [
     ["modules", "插件与动态库"],
+    ["internalMethods", "插件内部方法"],
     ["networkDestinations", "联网地址"],
     ["sensitiveApis", "敏感 API"],
     ["permissions", "权限与声明"],
