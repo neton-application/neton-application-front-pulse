@@ -9,17 +9,26 @@ import { Button, Card, CardContent, CardHeader, CardTitle } from "@neton/applica
 interface SigningCertificate {
   sha256: string; commonName: string | null; organization: string | null; organizationalUnit: string | null;
 }
+interface RuntimeEvidence {
+  category: string; name: string; moduleName: string | null; callerSymbol: string | null;
+  callsiteOffset: number | null; resolvedCallerSymbol: string | null; stackFingerprint: string | null;
+  callPath: string | null; resolvedCallPath: string | null; detail: string | null;
+  occurrences: number; devices: number; firstSeenAt: number; lastSeenAt: number;
+}
 interface ArtifactImage {
   relativePath: string; architecture: string; imageUuid: string | null; textSha256: string; textSize: number;
   hasSwiftMetadata: boolean; swiftSymbolCount: number; cppSymbolCount: number; cSymbolCount: number;
   importedSymbolCount: number; symbolsTruncated: boolean; swiftSymbols: string[]; cppSymbols: string[];
   cSymbols: string[]; importedSymbols: string[]; linkedLibraries: string[]; signatureStatus: string;
   signingCertificates: SigningCertificate[];
+  debugSymbolCount: number; debugSymbolsTruncated: boolean; debugSymbolSample: string[];
+  runtimeEvidence: RuntimeEvidence[];
 }
 interface ArtifactReport {
   id: number; versionId: number; fileName: string; fileSize: number; archiveSha256: string; format: string;
   imageCount: number; swiftSymbolCount: number; cppSymbolCount: number; cSymbolCount: number;
   importedSymbolCount: number; signedImageCount: number; createdAt: number; images: ArtifactImage[];
+  runtimeBuildNumber: number | null; runtimeEvidenceCount: number;
 }
 
 /**
@@ -177,7 +186,8 @@ export default function Page() {
               <Button variant="outline" onClick={() => setSelectedVersion(null)}>关闭</Button>
             </div>
             <p className="text-xs text-[var(--muted-foreground)]">
-              上传最终签名的 IPA 或压缩后的 XCArchive。服务端只解析文件，不执行其中代码；重新上传会替换该版本的旧报告。
+              上传最终签名的 IPA，或包含 dSYM 的压缩 XCArchive。服务端只解析文件，不执行其中代码；
+              dSYM 仅在 LC_UUID 与架构都匹配时用于恢复 Release 内部函数名。
             </p>
             {artifactError && <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600">{artifactError}</div>}
             {report ? <ArtifactReportView report={report} /> : (
@@ -198,10 +208,11 @@ function ArtifactReportView({ report }: { report: ArtifactReport }) {
     ["Mach-O", report.imageCount], ["已签名镜像", report.signedImageCount],
     ["Swift 符号", report.swiftSymbolCount], ["C++ 符号", report.cppSymbolCount],
     ["C 符号", report.cSymbolCount], ["导入符号", report.importedSymbolCount],
+    ["运行时证据", report.runtimeEvidenceCount],
   ] as const;
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
         {metrics.map(([label, value]) => <div key={label} className="rounded-md border border-[var(--border)] p-3">
           <div className="text-xs text-[var(--muted-foreground)]">{label}</div>
           <div className="text-xl font-semibold tabular-nums">{value}</div>
@@ -221,18 +232,56 @@ function ArtifactReportView({ report }: { report: ArtifactReport }) {
             <div className="break-all"><span className="text-[var(--muted-foreground)]">UUID：</span>{image.imageUuid ?? "无"}</div>
             <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">__TEXT SHA-256：</span>{image.textSha256}</div>
             <div>Swift metadata：{image.hasSwiftMetadata ? "有" : "无"}；Swift {image.swiftSymbolCount} / C++ {image.cppSymbolCount} / C {image.cSymbolCount} / 导入 {image.importedSymbolCount}</div>
+            <div>
+              dSYM：{image.debugSymbolCount > 0 ? `LC_UUID 匹配，恢复 ${image.debugSymbolCount} 个内部符号` : "未匹配到对应 dSYM"}
+              {image.debugSymbolsTruncated ? "（达到入库上限）" : ""}
+            </div>
             <EvidenceList title="签名证书" values={image.signingCertificates.map((cert) => `${cert.commonName ?? "未知主体"} · ${cert.organizationalUnit ?? cert.organization ?? "-"} · ${cert.sha256}`)} />
+            <RuntimeEvidenceView image={image} buildNumber={report.runtimeBuildNumber} />
             <EvidenceList title="依赖库" values={image.linkedLibraries} />
             <EvidenceList title="导入符号" values={image.importedSymbols} />
             <EvidenceList title="Swift 符号" values={image.swiftSymbols} />
             <EvidenceList title="C++ 符号" values={image.cppSymbols} />
             <EvidenceList title="C 符号" values={image.cSymbols} />
+            <EvidenceList title="dSYM 内部符号样本" values={image.debugSymbolSample} />
             {image.symbolsTruncated && <div className="text-amber-600">符号很多，页面证据已截断；顶部计数仍是完整数量。</div>}
           </div>
         </details>)}
       </div>
     </div>
   );
+}
+
+function RuntimeEvidenceView({ image, buildNumber }: { image: ArtifactImage; buildNumber: number | null }) {
+  if (!image.imageUuid) {
+    return <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-amber-700">镜像没有 LC_UUID，不能与运行时证据可靠关联。</div>;
+  }
+  if (image.runtimeEvidence.length === 0) {
+    return <div className="rounded border border-[var(--border)] p-2 text-[var(--muted-foreground)]">
+      LC_UUID 已建立关联键；构建 {buildNumber ?? "—"} 暂无这个镜像的运行时证据。
+    </div>;
+  }
+  const networks = image.runtimeEvidence.filter((item) => item.category === "network");
+  const behaviors = image.runtimeEvidence.filter((item) => ["api", "permission", "method"].includes(item.category));
+  return <div className="space-y-2 rounded border border-blue-500/30 bg-blue-500/5 p-3">
+    <div className="font-medium text-blue-700 dark:text-blue-300">
+      LC_UUID 精确关联 · 构建 {buildNumber ?? "—"} · {image.runtimeEvidence.length} 组运行时证据
+    </div>
+    <EvidenceList title="运行时调用 / 权限 / 内部方法" values={behaviors.map(runtimeEvidenceLabel)} />
+    <EvidenceList title="运行时网络目的地" values={networks.map(runtimeEvidenceLabel)} />
+  </div>;
+}
+
+function runtimeEvidenceLabel(item: RuntimeEvidence): string {
+  const action = item.detail ? `${item.name} · ${item.detail}` : item.name;
+  const caller = item.resolvedCallerSymbol ?? item.callerSymbol;
+  const path = item.resolvedCallPath ?? item.callPath;
+  return [
+    action,
+    caller ? `调用点 ${caller}` : item.callsiteOffset != null ? `调用点 +0x${item.callsiteOffset.toString(16)}（待 dSYM）` : null,
+    path ? `路径 ${path}` : null,
+    `${item.occurrences} 次 / ${item.devices} 台设备`,
+  ].filter(Boolean).join(" · ");
 }
 
 function EvidenceList({ title, values }: { title: string; values: string[] }) {
