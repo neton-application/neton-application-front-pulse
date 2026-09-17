@@ -25,6 +25,11 @@ interface PulseOverview {
   crashes: number; errors: number; timezone: string; activeTrend: ActiveTrendPoint[];
   byKind: KindCount[]; byDomain: DomainCount[]; topEvents: NameCount[]; recentIssues: PulseEvent[];
 }
+interface ConnectionSummary {
+  online: number;
+  activeLast5Minutes: number;
+  sdkVersions: Array<{ sdkVersion: string; devices: number; sessions: number }>;
+}
 
 /** 与后端 EventDomain / V005 的三个视图一一对应。 */
 const DOMAIN_LABELS: Record<string, string> = {
@@ -53,9 +58,18 @@ export default function Page() {
       `/admin/pulse/stats/overview?${pulseScopeParams(scope)}`,
     ),
   });
+  const connections = useQuery({
+    queryKey: ["pulse-connection-summary", scope.projectId],
+    queryFn: () => apiFetch<ConnectionSummary>(
+      `/admin/pulse/connection/summary?${pulseScopeParams({ ...scope, days: "1" })}`,
+    ),
+    refetchInterval: 10_000,
+  });
   const scopeParams = pulseScopeParams(scope);
 
   const cards: Array<[string, number | undefined, string, string]> = [
+    ["当前在线", connections.data?.online, "text-emerald-600", "心跳有效期内的长连接设备"],
+    ["近 5 分钟活跃", connections.data?.activeLast5Minutes, "text-blue-600", "最近产生过事件的设备"],
     ["累计用户", data?.totalUsers, "text-[var(--foreground)]", "按持久化设备标识去重"],
     ["今日活跃", data?.todayActiveUsers, "text-blue-600", "今天产生过事件的用户"],
     ["今日新增", data?.todayNewUsers, "text-emerald-600", "首次出现发生在今天"],
@@ -80,7 +94,7 @@ export default function Page() {
         <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/performance?${scopeParams}`}>性能数据</a>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         {cards.map(([label, v, cls, note]) => (
           <div key={label} className="rounded-lg border border-[var(--border)] p-4">
             <div className="text-xs text-[var(--muted-foreground)]">{label}</div>

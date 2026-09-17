@@ -7,11 +7,32 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, StatusBadge,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface QueueDepth { work: number; retry: number; processing: number; dead: number; truncatedAt: number }
 interface QueueCounters { enqueued: number; consumed: number; failed: number; dead: number }
 interface PipelineStatus { depth: QueueDepth; counters: QueueCounters; hasDeadLetters: boolean }
 interface Envelope { payload: string; attempts: number; firstSeenMs: number; lastError: string | null }
+interface OnlineConnection {
+  connectionId: string; projectId: string; deviceId: string; installationId: string;
+  platform: string; deviceType: string; packageName: string | null; appVersion: string | null;
+  buildNumber: number; sdkVersion: string; capabilities: string[];
+  connectedAt: number; lastHeartbeatAt: number;
+}
+interface ConnectionSummary {
+  online: number; activeLast5Minutes: number;
+  sdkVersions: Array<{ sdkVersion: string; devices: number; sessions: number }>;
+}
+
+const shortId = (value: string) => value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+const onlineColumns: DataColumn<OnlineConnection>[] = [
+  { key: "device", header: "设备", cell: (r) => <div><div className="font-medium">{r.deviceType}</div><code className="text-[11px] text-[var(--muted-foreground)]">{shortId(r.deviceId)}</code></div> },
+  { key: "platform", header: "平台", cell: (r) => r.platform },
+  { key: "app", header: "应用版本", cell: (r) => <span>{r.appVersion ?? "—"} <span className="text-xs text-[var(--muted-foreground)]">({r.buildNumber})</span></span> },
+  { key: "sdk", header: "PulseKit", cell: (r) => <code className="text-xs">{r.sdkVersion}</code> },
+  { key: "package", header: "包名", cell: (r) => <code className="text-xs">{r.packageName ?? "—"}</code> },
+  { key: "heartbeat", header: "最近心跳", cell: (r) => new Date(r.lastHeartbeatAt).toLocaleString("zh-CN") },
+];
 
 const deadColumns: DataColumn<Envelope>[] = [
   { key: "firstSeenMs", header: "首次入队", cell: (r) => (r.firstSeenMs ? new Date(r.firstSeenMs).toLocaleString("zh-CN") : "-") },
@@ -29,7 +50,9 @@ const deadColumns: DataColumn<Envelope>[] = [
  */
 export default function Page() {
   const queryClient = useQueryClient();
+  const { scope, setScope } = usePulseScope();
   const [busy, setBusy] = React.useState(false);
+  const scopeQuery = pulseScopeParams(scope);
 
   const status = useQuery({
     queryKey: ["pulse-pipeline-status"],
@@ -42,6 +65,16 @@ export default function Page() {
     queryKey: ["pulse-pipeline-dead"],
     queryFn: () => apiFetch<Envelope[]>("/admin/pulse/pipeline/dead-letters?limit=50"),
     refetchInterval: 5000,
+  });
+  const connectionSummary = useQuery({
+    queryKey: ["pulse-connection-summary", scope.projectId],
+    queryFn: () => apiFetch<ConnectionSummary>(`/admin/pulse/connection/summary?${scopeQuery}`),
+    refetchInterval: 10_000,
+  });
+  const online = useQuery({
+    queryKey: ["pulse-online-connections", scope.projectId],
+    queryFn: () => apiFetch<OnlineConnection[]>(`/admin/pulse/connection/online?${scopeQuery}`),
+    refetchInterval: 10_000,
   });
 
   const run = async (path: string) => {
@@ -71,11 +104,27 @@ export default function Page() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="PULSE"
-        title="采集管道"
-        description="客户端批量上报 → msgtrans/HTTP 接入 → Redis 原子领取 → PostgreSQL 入库后确认。写入失败的批次会重试，用尽次数后进入死信，可在此重放。"
-      />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <PageHeader
+          eyebrow="PULSE"
+          title="采集管道"
+          description="查看在线客户端、SDK 覆盖和上报队列健康情况。"
+        />
+        <PulseScopeSelector scope={scope} onChange={setScope} />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-lg border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted-foreground)]">当前在线</div><div className="text-2xl font-semibold tabular-nums text-emerald-600">{connectionSummary.data?.online ?? "…"}</div></div>
+        <div className="rounded-lg border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted-foreground)]">近 5 分钟活跃</div><div className="text-2xl font-semibold tabular-nums text-blue-600">{connectionSummary.data?.activeLast5Minutes ?? "…"}</div></div>
+        <div className="rounded-lg border border-[var(--border)] p-4 sm:col-span-2"><div className="text-xs text-[var(--muted-foreground)]">近 30 日 PulseKit 版本</div><div className="mt-2 flex flex-wrap gap-2">{(connectionSummary.data?.sdkVersions ?? []).map((v) => <span key={v.sdkVersion} className="rounded bg-[var(--muted)] px-2 py-1 text-xs"><code>{v.sdkVersion}</code> · {v.devices} 台</span>)}{connectionSummary.data?.sdkVersions.length === 0 && <span className="text-sm text-[var(--muted-foreground)]">暂无数据</span>}</div></div>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle>在线设备</CardTitle></CardHeader>
+        <CardContent>
+          <DataTable columns={onlineColumns} rows={online.data ?? []} rowKey={(r) => r.connectionId} loading={online.isLoading} emptyTitle="暂无在线设备" emptyDescription="客户端完成 CLIENT_CONNECT 并持续心跳后会显示在这里。" />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {cards.map(([label, v, cls]) => (
