@@ -4,9 +4,10 @@ import * as React from "react";
 import { apiFetch } from "@neton/application-front-runtime/client";
 import { useQuery } from "@neton/application-front-runtime/client-context";
 import {
-  Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Select,
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Pagination, Select,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { timeAgo } from "../pulse-ui";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface VersionStats {
@@ -31,7 +32,7 @@ const pct = (n: number) => `${n.toFixed(2)}%`;
 const deltaClass = (d: number) => (d < -0.005 ? "text-red-600" : d > 0.005 ? "text-green-600" : "");
 const signed = (d: number) => `${d >= 0 ? "+" : ""}${d.toFixed(2)}pp`;
 
-const versionColumns: DataColumn<VersionStats>[] = [
+function versionColumns(onCompare: (build: number) => void): DataColumn<VersionStats>[] { return [
   { key: "buildNumber", header: "构建号", cell: (r) => <span className="font-medium tabular-nums">{r.buildNumber}</span> },
   { key: "appVersion", header: "版本", cell: (r) => r.appVersion ?? "-" },
   { key: "devices", header: "设备", cell: (r) => <span className="tabular-nums">{r.devices}</span> },
@@ -45,8 +46,17 @@ const versionColumns: DataColumn<VersionStats>[] = [
   { key: "crashFreeSessionRate", header: "无崩溃会话率", cell: (r) => <span className="tabular-nums">{pct(r.crashFreeSessionRate)}</span> },
   { key: "crashes", header: "崩溃", cell: (r) => <span className="tabular-nums">{r.crashes}</span> },
   { key: "newIssues", header: "新增问题", cell: (r) => <span className="tabular-nums">{r.newIssues}</span> },
-  { key: "lastSeenAt", header: "最近上报", cell: (r) => (r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : "-") },
-];
+  {
+    key: "lastSeenAt", header: "最近上报",
+    cell: (r) => <span title={r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : ""}>{timeAgo(r.lastSeenAt)}</span>,
+  },
+  {
+    key: "actions", header: "操作", className: "text-right", headerClassName: "text-right",
+    cell: (r) => (
+      <Button variant="outline" size="sm" onClick={() => onCompare(r.buildNumber)}>对比这一版</Button>
+    ),
+  },
+]; }
 
 const regressionColumns: DataColumn<IssueOnBuild>[] = [
   { key: "title", header: "崩溃", cell: (r) => <span className="font-medium">{r.title}</span> },
@@ -65,6 +75,10 @@ const regressionColumns: DataColumn<IssueOnBuild>[] = [
 export default function Page() {
   const [build, setBuild] = React.useState<string>("");
   const { scope, setScope } = usePulseScope();
+  // 版本表不走服务端分页：一个应用的构建数量有限，接口一次就返回全部,
+  // 但「有限」在两年后是三位数,所以列表本身仍然要翻页。
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(20);
 
   const versions = useQuery({
     queryKey: ["pulse-versions", scope.projectId, scope.days],
@@ -169,14 +183,20 @@ export default function Page() {
 
       <Card>
         <CardHeader><CardTitle>全部版本</CardTitle></CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           <DataTable
-            columns={versionColumns}
-            rows={versions.data ?? []}
+            columns={versionColumns((b) => setBuild(String(b)))}
+            rows={(versions.data ?? []).slice((page - 1) * pageSize, page * pageSize)}
             rowKey={(r) => String(r.buildNumber)}
             loading={versions.isLoading}
             emptyTitle="还没有版本数据"
             emptyDescription="客户端上报构建号后，这里按构建聚合。"
+          />
+          <Pagination
+            page={page} pageSize={pageSize} total={versions.data?.length ?? 0}
+            loading={versions.isFetching}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
           />
         </CardContent>
       </Card>

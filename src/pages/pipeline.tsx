@@ -4,9 +4,10 @@ import * as React from "react";
 import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQuery, useQueryClient } from "@neton/application-front-runtime/client-context";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, StatusBadge,
-  type DataColumn,
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, Input, PageHeader, Pagination,
+  StatusBadge, type DataColumn,
 } from "@neton/application-front-kit";
+import { timeAgo } from "../pulse-ui";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface QueueDepth { work: number; retry: number; processing: number; dead: number; truncatedAt: number }
@@ -31,7 +32,10 @@ const onlineColumns: DataColumn<OnlineConnection>[] = [
   { key: "app", header: "应用版本", cell: (r) => <span>{r.appVersion ?? "—"} <span className="text-xs text-[var(--muted-foreground)]">({r.buildNumber})</span></span> },
   { key: "sdk", header: "PulseKit", cell: (r) => <code className="text-xs">{r.sdkVersion}</code> },
   { key: "package", header: "包名", cell: (r) => <code className="text-xs">{r.packageName ?? "—"}</code> },
-  { key: "heartbeat", header: "最近心跳", cell: (r) => new Date(r.lastHeartbeatAt).toLocaleString("zh-CN") },
+  {
+    key: "heartbeat", header: "最近心跳",
+    cell: (r) => <span title={new Date(r.lastHeartbeatAt).toLocaleString("zh-CN")}>{timeAgo(r.lastHeartbeatAt)}</span>,
+  },
 ];
 
 const deadColumns: DataColumn<Envelope>[] = [
@@ -52,6 +56,10 @@ export default function Page() {
   const queryClient = useQueryClient();
   const { scope, setScope } = usePulseScope();
   const [busy, setBusy] = React.useState(false);
+  // 在线设备是一份快照数组：设备多起来时一屏放不下，翻页与搜索都在前端做。
+  const [onlineSearch, setOnlineSearch] = React.useState("");
+  const [onlinePage, setOnlinePage] = React.useState(1);
+  const [onlineSize, setOnlineSize] = React.useState(20);
   const scopeQuery = pulseScopeParams(scope);
 
   const status = useQuery({
@@ -88,6 +96,11 @@ export default function Page() {
     }
   };
 
+  const onlineKeyword = onlineSearch.trim().toLowerCase();
+  const onlineRows = (online.data ?? []).filter((r) => !onlineKeyword
+    || [r.deviceId, r.deviceType, r.appVersion, r.packageName, r.sdkVersion, r.platform]
+      .some((v) => (v ?? "").toLowerCase().includes(onlineKeyword)));
+
   const d = status.data?.depth;
   const c = status.data?.counters;
   const truncated = (n: number | undefined) => (d && n !== undefined && n >= d.truncatedAt ? `${n}+` : String(n ?? "…"));
@@ -108,7 +121,7 @@ export default function Page() {
         <PageHeader
           eyebrow="PULSE"
           title="采集管道"
-          description="查看在线客户端、SDK 覆盖和上报队列健康情况。"
+          description="上报链路本身的健康状况：哪些客户端正连着、跑的是哪个 SDK 版本，以及事件从入队到落库的每一步有没有积压或丢弃。这一页看的是「数据有没有进来」，不是数据本身。"
         />
         <PulseScopeSelector scope={scope} onChange={setScope} />
       </div>
@@ -120,9 +133,32 @@ export default function Page() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>在线设备</CardTitle></CardHeader>
-        <CardContent>
-          <DataTable columns={onlineColumns} rows={online.data ?? []} rowKey={(r) => r.connectionId} loading={online.isLoading} emptyTitle="暂无在线设备" emptyDescription="客户端完成 CLIENT_CONNECT 并持续心跳后会显示在这里。" />
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>在线设备 · {onlineRows.length}</CardTitle>
+            <Input
+              className="h-8 w-60"
+              placeholder="搜索设备 / 版本 / 包名"
+              value={onlineSearch}
+              onChange={(e) => { setOnlineSearch(e.target.value); setOnlinePage(1); }}
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          <DataTable
+            columns={onlineColumns}
+            rows={onlineRows.slice((onlinePage - 1) * onlineSize, onlinePage * onlineSize)}
+            rowKey={(r) => r.connectionId}
+            loading={online.isLoading}
+            emptyTitle={onlineKeyword ? "没有匹配的设备" : "暂无在线设备"}
+            emptyDescription="客户端完成 CLIENT_CONNECT 并持续心跳后会显示在这里。"
+          />
+          <Pagination
+            page={onlinePage} pageSize={onlineSize} total={onlineRows.length}
+            loading={online.isFetching}
+            onPageChange={setOnlinePage}
+            onPageSizeChange={(size) => { setOnlineSize(size); setOnlinePage(1); }}
+          />
         </CardContent>
       </Card>
 

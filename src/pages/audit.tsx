@@ -4,10 +4,11 @@ import * as React from "react";
 import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQuery, useQueryClient } from "@neton/application-front-runtime/client-context";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader,
-  type DataColumn,
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, Field, Input,
+  PageHeader, Pagination, Select, type DataColumn,
 } from "@neton/application-front-kit";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
+import { timeAgo } from "../pulse-ui";
 
 interface Alert {
   id: number; projectId: string; moduleName: string; severity: string; label: string;
@@ -79,8 +80,16 @@ const API_LABEL: Record<string, string> = {
  */
 export default function Page() {
   const queryClient = useQueryClient();
-  const [onlyOpen, setOnlyOpen] = React.useState(true);
   const { scope, setScope } = usePulseScope();
+  // 证据是一次取回的数组（它本来就是聚合结果），所以搜索与翻页都在前端做。
+  const [evidenceSearch, setEvidenceSearch] = React.useState("");
+  const [evidencePage, setEvidencePage] = React.useState(1);
+  const [evidenceSize, setEvidenceSize] = React.useState(20);
+  // 告警走服务端分页：它会随时间无限增长。
+  const [alertFilters, setAlertFilters] = React.useState({ status: "0", severity: "" });
+  const [alertDraft, setAlertDraft] = React.useState(alertFilters);
+  const [alertPage, setAlertPage] = React.useState(1);
+  const [alertSize, setAlertSize] = React.useState(20);
   const [evidenceKind, setEvidenceKind] = React.useState<keyof Pick<Evidence, "modules" | "internalMethods" | "networkDestinations" | "sensitiveApis" | "permissions">>("modules");
 
   const evidence = useQuery({
@@ -89,14 +98,18 @@ export default function Page() {
   });
 
   const alerts = useQuery({
-    queryKey: ["pulse-audit-alerts", onlyOpen, scope.projectId],
-    queryFn: () => apiFetch<Page<Alert>>(
-      `/admin/pulse/audit/alert/page?pageSize=100${onlyOpen ? "&status=0" : ""}${scope.projectId ? `&projectId=${encodeURIComponent(scope.projectId)}` : ""}`,
-    ),
+    queryKey: ["pulse-audit-alerts", scope.projectId, alertFilters.status, alertFilters.severity, alertPage, alertSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ pageNo: String(alertPage), pageSize: String(alertSize) });
+      if (alertFilters.status) params.set("status", alertFilters.status);
+      if (alertFilters.severity) params.set("severity", alertFilters.severity);
+      if (scope.projectId) params.set("projectId", scope.projectId);
+      return apiFetch<Page<Alert>>(`/admin/pulse/audit/alert/page?${params}`);
+    },
   });
   const rules = useQuery({
     queryKey: ["pulse-audit-rules"],
-    queryFn: () => apiFetch<Page<Rule>>("/admin/pulse/audit/rule/page?pageSize=100"),
+    queryFn: () => apiFetch<Page<Rule>>("/admin/pulse/audit/rule/page?pageSize=20"),
   });
 
   const triage = async (id: number, status: number) => {
@@ -138,15 +151,18 @@ export default function Page() {
       cell: (r) => (r.kind === "behavior" ? <span className="tabular-nums">{r.callCount}</span> : <span className="text-[var(--muted-foreground)]">—</span>),
     },
     { key: "occurrences", header: "上报次数", cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
-    { key: "lastSeenAt", header: "最近出现", cell: (r) => (r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : "-") },
+    {
+      key: "lastSeenAt", header: "最近出现",
+      cell: (r) => <span title={r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : ""}>{timeAgo(r.lastSeenAt)}</span>,
+    },
     { key: "status", header: "状态", cell: (r) => STATUS_LABEL[r.status] ?? String(r.status) },
     {
-      key: "actions", header: "操作",
+      key: "actions", header: "操作", className: "text-right", headerClassName: "text-right",
       cell: (r) => (
-        <div className="flex gap-2">
-          {r.status !== 1 && <Button variant="outline" onClick={() => void triage(r.id, 1)}>确认</Button>}
-          {r.status !== 2 && <Button variant="outline" onClick={() => void triage(r.id, 2)}>忽略</Button>}
-          {r.status !== 0 && <Button variant="outline" onClick={() => void triage(r.id, 0)}>重新打开</Button>}
+        <div className="flex justify-end gap-2 whitespace-nowrap">
+          {r.status !== 1 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 1)}>确认</Button>}
+          {r.status !== 2 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 2)}>忽略</Button>}
+          {r.status !== 0 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 0)}>重新打开</Button>}
         </div>
       ),
     },
@@ -201,7 +217,13 @@ export default function Page() {
     ["sensitiveApis", "敏感 API"],
     ["permissions", "权限与声明"],
   ];
-  const currentEvidence = evidence.data?.[evidenceKind] ?? [];
+  const allEvidence = evidence.data?.[evidenceKind] ?? [];
+  const keyword = evidenceSearch.trim().toLowerCase();
+  const filteredEvidence = keyword
+    ? allEvidence.filter((r) => [r.name, API_LABEL[r.name], r.moduleName, r.detail, r.callerSymbol]
+        .some((v) => (v ?? "").toLowerCase().includes(keyword)))
+    : allEvidence;
+  const currentEvidence = filteredEvidence.slice((evidencePage - 1) * evidenceSize, evidencePage * evidenceSize);
 
   return (
     <div className="space-y-4">
@@ -218,44 +240,87 @@ export default function Page() {
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>观察证据</CardTitle>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {evidenceGroups.map(([key, label]) => (
-                <Button key={key} variant={evidenceKind === key ? "default" : "outline"} onClick={() => setEvidenceKind(key)}>
+                <Button
+                  key={key}
+                  size="sm"
+                  variant={evidenceKind === key ? "default" : "outline"}
+                  onClick={() => { setEvidenceKind(key); setEvidencePage(1); }}
+                >
                   {label} · {evidence.data?.[key].length ?? 0}
                 </Button>
               ))}
+              <Input
+                className="h-8 w-56"
+                placeholder="搜索名称 / 模块 / 地址"
+                value={evidenceSearch}
+                onChange={(e) => { setEvidenceSearch(e.target.value); setEvidencePage(1); }}
+              />
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           <DataTable
             columns={evidenceColumns}
             rows={currentEvidence}
             rowKey={(r) => `${r.category}-${r.name}-${r.moduleName ?? ""}-${r.stackFingerprint ?? ""}-${r.detail ?? ""}`}
             loading={evidence.isLoading}
-            emptyTitle="当前范围没有这类证据"
+            emptyTitle={keyword ? "没有匹配的证据" : "当前范围没有这类证据"}
             emptyDescription="这表示尚未观察到，并不代表对应能力已通过审计。"
+          />
+          <Pagination
+            page={evidencePage}
+            pageSize={evidenceSize}
+            total={filteredEvidence.length}
+            loading={evidence.isFetching}
+            onPageChange={setEvidencePage}
+            onPageSizeChange={(size) => { setEvidenceSize(size); setEvidencePage(1); }}
           />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>告警</CardTitle>
-            <Button variant="outline" onClick={() => setOnlyOpen((v) => !v)}>
-              {onlyOpen ? "显示全部" : "只看待处理"}
-            </Button>
+            <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); setAlertFilters(alertDraft); setAlertPage(1); }}>
+                <Field label="状态">
+                  <Select className="h-8 w-32" value={alertDraft.status} onChange={(e) => setAlertDraft({ ...alertDraft, status: e.target.value })}>
+                    <option value="">全部</option>
+                    <option value="0">待处理</option>
+                    <option value="1">已确认</option>
+                    <option value="2">已忽略</option>
+                  </Select>
+                </Field>
+                <Field label="级别">
+                  <Select className="h-8 w-32" value={alertDraft.severity} onChange={(e) => setAlertDraft({ ...alertDraft, severity: e.target.value })}>
+                    <option value="">全部</option>
+                    <option value="critical">严重</option>
+                    <option value="warn">关注</option>
+                    <option value="info">记录</option>
+                  </Select>
+                </Field>
+              <Button type="submit" size="sm">查询</Button>
+            </form>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           <DataTable
             columns={alertColumns}
             rows={alerts.data?.list ?? []}
             rowKey={(r) => String(r.id)}
             loading={alerts.isLoading}
-            emptyTitle={onlyOpen ? "没有待处理告警" : "还没有告警"}
-            emptyDescription="客户端上报的随包镜像命中规则后，会在这里按模块聚合出现。"
+            emptyTitle={alertFilters.status === "0" ? "没有待处理告警" : "没有符合条件的告警"}
+            emptyDescription="客户端上报的随包镜像命中规则后，会在这里按模块聚合出现；没有启用的审计规则时不会产生任何告警。"
+          />
+          <Pagination
+            page={alertPage}
+            pageSize={alertSize}
+            total={alerts.data?.total ?? 0}
+            loading={alerts.isFetching}
+            onPageChange={setAlertPage}
+            onPageSizeChange={(size) => { setAlertSize(size); setAlertPage(1); }}
           />
         </CardContent>
       </Card>
@@ -263,8 +328,8 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>审计规则</CardTitle>
-            <a className="text-sm underline" href="/pulse/audit-rules">维护规则</a>
+            <CardTitle>审计规则 · 前 20 条</CardTitle>
+            <a className="text-sm underline" href="/pulse/audit-rules">维护全部规则</a>
           </div>
         </CardHeader>
         <CardContent>

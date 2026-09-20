@@ -4,9 +4,10 @@ import * as React from "react";
 import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQuery, useQueryClient } from "@neton/application-front-runtime/client-context";
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader,
+  Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Pagination,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { timeAgo } from "../pulse-ui";
 
 interface Rule {
   id: number; name: string; type: string; projectId: string | null;
@@ -44,13 +45,19 @@ export default function Page() {
   const queryClient = useQueryClient();
   const [busy, setBusy] = React.useState(false);
 
+  const [rulePage, setRulePage] = React.useState(1);
+  const [ruleSize, setRuleSize] = React.useState(20);
+  const [recordPage, setRecordPage] = React.useState(1);
+  const [recordSize, setRecordSize] = React.useState(20);
+
   const rules = useQuery({
-    queryKey: ["pulse-alert-rules"],
-    queryFn: () => apiFetch<Page<Rule>>("/admin/pulse/alert/rule/page?pageSize=100"),
+    queryKey: ["pulse-alert-rules", rulePage, ruleSize],
+    queryFn: () => apiFetch<Page<Rule>>(`/admin/pulse/alert/rule/page?pageNo=${rulePage}&pageSize=${ruleSize}`),
   });
   const records = useQuery({
-    queryKey: ["pulse-alert-records"],
-    queryFn: () => apiFetch<Page<Record_>>("/admin/pulse/alert/record/page?pageSize=100"),
+    // 触发历史只增不减，必须分页：它是告警系统的审计线索，不能因为太长就截断。
+    queryKey: ["pulse-alert-records", recordPage, recordSize],
+    queryFn: () => apiFetch<Page<Record_>>(`/admin/pulse/alert/record/page?pageNo=${recordPage}&pageSize=${recordSize}`),
   });
 
   const evaluateNow = async () => {
@@ -78,7 +85,12 @@ export default function Page() {
       key: "webhookUrl", header: "通知地址",
       cell: (r) => (r.webhookUrl ? <code className="text-xs">{r.webhookUrl}</code> : <span className="text-amber-600 text-xs">未配置</span>),
     },
-    { key: "lastFiredAt", header: "最近触发", cell: (r) => (r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString("zh-CN") : "从未") },
+    {
+      key: "lastFiredAt", header: "最近触发",
+      cell: (r) => (r.lastFiredAt
+        ? <span title={new Date(r.lastFiredAt).toLocaleString("zh-CN")}>{timeAgo(r.lastFiredAt)}</span>
+        : <span className="text-[var(--muted-foreground)]">从未</span>),
+    },
     { key: "status", header: "状态", cell: (r) => (r.status === 1 ? "启用" : "停用") },
   ];
 
@@ -122,21 +134,27 @@ export default function Page() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           <DataTable
             columns={ruleColumns}
             rows={rules.data?.list ?? []}
             rowKey={(r) => String(r.id)}
             loading={rules.isLoading}
             emptyTitle="还没有告警规则"
-            emptyDescription="没有规则时不会有任何通知——问题只能靠人主动登录后台发现。"
+            emptyDescription="没有规则时不会有任何通知——问题只能靠人主动登录后台发现。前往「维护规则」新建一条。"
+          />
+          <Pagination
+            page={rulePage} pageSize={ruleSize} total={rules.data?.total ?? 0}
+            loading={rules.isFetching}
+            onPageChange={setRulePage}
+            onPageSizeChange={(size) => { setRuleSize(size); setRulePage(1); }}
           />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader><CardTitle>触发历史</CardTitle></CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           <DataTable
             columns={recordColumns}
             rows={records.data?.list ?? []}
@@ -144,6 +162,12 @@ export default function Page() {
             loading={records.isLoading}
             emptyTitle="还没有触发过"
             emptyDescription="每次触发都会连同通知是否送达一起记录在这里。"
+          />
+          <Pagination
+            page={recordPage} pageSize={recordSize} total={records.data?.total ?? 0}
+            loading={records.isFetching}
+            onPageChange={setRecordPage}
+            onPageSizeChange={(size) => { setRecordSize(size); setRecordPage(1); }}
           />
         </CardContent>
       </Card>

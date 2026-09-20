@@ -13,7 +13,7 @@ export default function Page() {
         resourceKey: "pulse-event",
         eyebrow: "PULSE",
         title: "事件",
-        description: "客户端上报的统一事件，只存元数据。可按类型、事件名、会话筛选。",
+        description: "所有上报事件的原始流水，一行就是客户端发生过的一件事，不做任何聚合。排查具体某台设备、某次会话做了什么时从这里查；看趋势和汇总请去「概览」「版本分析」「崩溃分析」。只存元数据，不含用户内容。",
         endpoint: "/pulse/event",
         listPath: "page",
         readOnly: true,
@@ -26,7 +26,15 @@ export default function Page() {
           // panel from the `filter: true` entries and the table columns from everything else, so a
           // key that only appears once as a filter can be searched but never read. Type, event
           // name and session are the three things this page exists to show.
-          { key: "kind", label: "类型", filter: true },
+          { key: "kind", label: "类型", filter: true, type: "select", options: [
+            { label: "Analytics · 产品行为", value: "Analytics" },
+            { label: "Runtime · 运行时动作", value: "Runtime" },
+            { label: "Performance · 性能采样", value: "Performance" },
+            { label: "Error · 已捕获错误", value: "Error" },
+            { label: "Crash · 致命崩溃", value: "Crash" },
+            { label: "Log · 日志", value: "Log" },
+            { label: "Breadcrumb · 行为面包屑", value: "Breadcrumb" },
+          ] },
           { key: "kind", label: "类型" },
           { key: "name", label: "事件", filter: true },
           { key: "name", label: "事件" },
