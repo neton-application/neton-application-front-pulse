@@ -22,9 +22,16 @@ export default function Page() {
         headerActions: <PulseScopeSelector scope={scope} onChange={setScope} />,
         fields: [
           { key: "ts", label: "时间", format: "date" },
+          // Each filterable key is declared twice on purpose: front-resource builds the filter
+          // panel from the `filter: true` entries and the table columns from everything else, so a
+          // key that only appears once as a filter can be searched but never read. Type, event
+          // name and session are the three things this page exists to show.
           { key: "kind", label: "类型", filter: true },
+          { key: "kind", label: "类型" },
           { key: "name", label: "事件", filter: true },
+          { key: "name", label: "事件" },
           { key: "sessionId", label: "会话", format: "mono", filter: true },
+          { key: "sessionId", label: "会话", format: "mono" },
           { key: "sourceModule", label: "来源模块", format: "mono" },
           { key: "sourceImageUuid", label: "镜像 UUID", format: "mono" },
           { key: "attributes", label: "属性", format: "mono" },

@@ -23,9 +23,13 @@ export default function Page() {
         initialFilters: { kind: "Performance" },
         fields: [
           { key: "ts", label: "时间", format: "date" },
+          // Declared twice: front-resource takes table columns from the non-filter entries, so a
+          // filter-only key is searchable but invisible in the table.
           { key: "kind", label: "类型", filter: true },
+          { key: "kind", label: "类型" },
           { key: "name", label: "指标" },
           { key: "sessionId", label: "会话", format: "mono", filter: true },
+          { key: "sessionId", label: "会话", format: "mono" },
           { key: "attributes", label: "详情（duration_ms 等）", format: "mono" },
         ],
       }}
