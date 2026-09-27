@@ -18,7 +18,7 @@ export default function Page() {
         eyebrow: "PULSE",
         title: "应用管理",
         description:
-          "后台自动生成 App ID。默认校验登记包名，也可为内部重签包配置允许名单或放开包名。",
+          "后台自动生成 App ID，写入客户端即开始采集。采集范围也在这里配置：客户端连接与每次心跳时取回，无需发版即可调整。默认校验登记包名，也可为内部重签包配置允许名单或放开包名。",
         endpoint: "/pulse/app",
         listPath: "page",
         permissions: {
@@ -73,6 +73,21 @@ export default function Page() {
             type: "textarea",
             placeholder: "仅允许名单策略使用，逗号或换行分隔",
             table: false,
+          },
+          {
+            // 采集策略下发给客户端，客户端据此在写入缓冲前丢弃——关掉一类数据省的是设备上的
+            // 内存、电量和流量，不只是服务端存储。预设而不是自由勾选：真实的选择只有这几种，
+            // 而一个能勾出「只收崩溃、不收会话」的界面只会产出无法解释的报表。
+            key: "collectKinds",
+            label: "采集范围",
+            type: "select",
+            defaultValue: "",
+            options: [
+              { label: "全部类型（默认）", value: "" },
+              { label: "全部，但不含运行时审计", value: "Analytics,Crash,Error,Performance,Log,Breadcrumb" },
+              { label: "仅质量监控（崩溃 / 错误 / 性能）", value: "Crash,Error,Performance" },
+              { label: "仅产品分析", value: "Analytics" },
+            ],
           },
           { key: "liveVersion", label: "线上版本", editable: false },
           { key: "liveBuild", label: "线上构建号", editable: false },
