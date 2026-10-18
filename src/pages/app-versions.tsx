@@ -5,6 +5,8 @@ import { apiFetch, apiWrite } from "@neton/application-front-runtime/client";
 import { useQueryClient } from "@neton/application-front-runtime/client-context";
 import { ResourcePage } from "@neton/application-front-resource";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@neton/application-front-kit";
+import { useDescribeError } from "@neton/application-front-runtime/errors";
+import { useFormat, useT, type Translate } from "@neton/application-front-runtime/i18n";
 
 interface SigningCertificate {
   sha256: string; commonName: string | null; organization: string | null; organizationalUnit: string | null;
@@ -38,6 +40,8 @@ interface ArtifactReport {
  * 而发布一个强制更新的版本等于把用户挡在应用之外。这两件事不该是同一个权限。
  */
 export default function Page() {
+  const t = useT("pulse");
+  const describeError = useDescribeError("pulse");
   const queryClient = useQueryClient();
   const [appId, setAppId] = React.useState<string>("");
   const [appName, setAppName] = React.useState<string>("");
@@ -69,9 +73,9 @@ export default function Page() {
       setReport(await apiFetch<ArtifactReport | null>(`/admin/pulse/artifact/get?versionId=${id}`));
     } catch (error) {
       setReport(null);
-      setArtifactError(error instanceof Error ? error.message : "读取分析结果失败");
+      setArtifactError(describeError(error));
     }
-  }, []);
+  }, [describeError]);
 
   const analyzeArtifact = React.useCallback(async () => {
     if (!selectedVersion || !artifact) return;
@@ -85,16 +89,16 @@ export default function Page() {
         body: artifact,
       }));
     } catch (error) {
-      setArtifactError(error instanceof Error ? error.message : "制品分析失败");
+      setArtifactError(describeError(error));
     } finally {
       setArtifactBusy(false);
     }
-  }, [artifact, selectedVersion]);
+  }, [artifact, selectedVersion, describeError]);
 
   if (!appId) {
     return (
       <div className="p-6 text-sm text-[var(--muted-foreground)]">
-        缺少 appId。请从「应用管理」页面进入某个应用的版本列表。
+        {t("appVersion.missingAppId")}
       </div>
     );
   }
@@ -104,10 +108,10 @@ export default function Page() {
     <ResourcePage
       config={{
         resourceKey: "pulse-app-version",
-        eyebrow: "PULSE",
-        title: appName ? `版本管理 · ${appName}` : "版本管理",
-        description:
-          "客户端用构建号比较，不用版本名——版本名只用于展示。只有已发布的版本会参与更新检查。",
+        errorNamespace: "pulse",
+        eyebrow: t("common.eyebrow"),
+        title: appName ? t("appVersion.titleWithApp", { appName }) : t("appVersion.title"),
+        description: t("appVersion.description"),
         endpoint: "/pulse/app-version",
         listPath: "page",
         initialFilters: { appId },
@@ -119,30 +123,30 @@ export default function Page() {
         },
         fields: [
           // 隐藏字段：带上 appId，既作为列表筛选，也随新建一起提交。
-          { key: "appId", label: "应用", filter: true, table: false, defaultValue: appId },
-          { key: "versionName", label: "版本名", required: true, placeholder: "如：1.4.2" },
+          { key: "appId", label: t("scope.app"), filter: true, table: false, defaultValue: appId },
+          { key: "versionName", label: t("appVersion.field.versionName"), required: true, placeholder: t("appVersion.placeholder.versionName") },
           {
             key: "buildNumber",
-            label: "构建号",
+            label: t("common.field.buildNumber"),
             type: "number",
             required: true,
-            placeholder: "单调递增，iOS 取 CFBundleVersion，Android 取 versionCode",
+            placeholder: t("appVersion.placeholder.buildNumber"),
           },
           {
             key: "forceUpdate",
-            label: "强制更新",
+            label: t("appVersion.field.forceUpdate"),
             type: "select",
             defaultValue: 0,
             options: [
-              { label: "否（仅提示）", value: 0 },
-              { label: "是（不更新无法使用）", value: 1 },
+              { label: t("appVersion.forceUpdate.no"), value: 0 },
+              { label: t("appVersion.forceUpdate.yes"), value: 1 },
             ],
           },
-          { key: "published", label: "状态", type: "select", format: "status", defaultValue: 0,
-            options: [{ label: "已发布", value: 1 }, { label: "草稿", value: 0 }] },
-          { key: "downloadUrl", label: "下载地址", placeholder: "App Store / 应用市场 / 直链", format: "mono" },
-          { key: "releaseNotes", label: "更新说明", type: "textarea", table: false },
-          { key: "publishedAt", label: "发布时间", format: "date", editable: false },
+          { key: "published", label: t("common.field.status"), type: "select", format: "status", defaultValue: 0,
+            options: [{ label: t("appVersion.published.yes"), value: 1 }, { label: t("appVersion.published.no"), value: 0 }] },
+          { key: "downloadUrl", label: t("appVersion.field.downloadUrl"), placeholder: t("appVersion.placeholder.downloadUrl"), format: "mono" },
+          { key: "releaseNotes", label: t("appVersion.field.releaseNotes"), type: "textarea", table: false },
+          { key: "publishedAt", label: t("appVersion.field.publishedAt"), format: "date", editable: false },
         ],
         // forceUpdate 在表单里是 0/1 的下拉，落库是布尔；appId 从查询串来，必须是数字。
         mapSave: (record) => ({
@@ -155,10 +159,10 @@ export default function Page() {
         rowActions: (record) => ({
           primary: [
             Number(record.published) === 1
-              ? { label: "下架", kind: "disable", onClick: () => void setPublished(record.id, false) }
-              : { label: "发布", kind: "enable", tone: "positive", onClick: () => void setPublished(record.id, true) },
+              ? { label: t("appVersion.action.unpublish"), kind: "disable", onClick: () => void setPublished(record.id, false) }
+              : { label: t("appVersion.action.publish"), kind: "enable", tone: "positive", onClick: () => void setPublished(record.id, true) },
             {
-              label: "制品分析",
+              label: t("appVersion.action.artifact"),
               kind: "upload",
               onClick: () => void openArtifact(Number(record.id), String(record.versionName ?? record.id)),
             },
@@ -169,7 +173,7 @@ export default function Page() {
     {selectedVersion && (
       <Card>
         <CardHeader>
-          <CardTitle>最终制品静态分析 · {selectedVersion.name}</CardTitle>
+          <CardTitle>{t("artifact.title", { name: selectedVersion.name })}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -181,18 +185,17 @@ export default function Page() {
                 className="max-w-full text-sm file:mr-3 file:rounded-md file:border file:border-[var(--border)] file:bg-transparent file:px-3 file:py-2"
               />
               <Button disabled={!artifact || artifactBusy} onClick={() => void analyzeArtifact()}>
-                {artifactBusy ? "正在分析…" : "上传并分析"}
+                {artifactBusy ? t("artifact.analyzing") : t("artifact.analyze")}
               </Button>
-              <Button variant="outline" onClick={() => setSelectedVersion(null)}>关闭</Button>
+              <Button variant="outline" onClick={() => setSelectedVersion(null)}>{t("common.action.close")}</Button>
             </div>
             <p className="text-xs text-[var(--muted-foreground)]">
-              上传最终签名的 IPA，或包含 dSYM 的压缩 XCArchive。服务端只解析文件，不执行其中代码；
-              dSYM 仅在 LC_UUID 与架构都匹配时用于恢复 Release 内部函数名。
+              {t("artifact.hint")}
             </p>
             {artifactError && <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600">{artifactError}</div>}
             {report ? <ArtifactReportView report={report} /> : (
               <div className="rounded-md border border-dashed border-[var(--border)] p-6 text-sm text-[var(--muted-foreground)]">
-                这个版本还没有静态分析报告。
+                {t("artifact.noReport")}
               </div>
             )}
           </div>
@@ -204,11 +207,13 @@ export default function Page() {
 }
 
 function ArtifactReportView({ report }: { report: ArtifactReport }) {
+  const t = useT("pulse");
+  const fmt = useFormat();
   const metrics = [
-    ["Mach-O", report.imageCount], ["已签名镜像", report.signedImageCount],
-    ["Swift 符号", report.swiftSymbolCount], ["C++ 符号", report.cppSymbolCount],
-    ["C 符号", report.cSymbolCount], ["导入符号", report.importedSymbolCount],
-    ["运行时证据", report.runtimeEvidenceCount],
+    ["Mach-O", report.imageCount], [t("artifact.metric.signedImages"), report.signedImageCount],
+    [t("artifact.metric.swiftSymbols"), report.swiftSymbolCount], [t("artifact.metric.cppSymbols"), report.cppSymbolCount],
+    [t("artifact.metric.cSymbols"), report.cSymbolCount], [t("artifact.metric.importedSymbols"), report.importedSymbolCount],
+    [t("artifact.metric.runtimeEvidence"), report.runtimeEvidenceCount],
   ] as const;
   return (
     <div className="space-y-4">
@@ -219,35 +224,35 @@ function ArtifactReportView({ report }: { report: ArtifactReport }) {
         </div>)}
       </div>
       <div className="rounded-md border border-[var(--border)] p-3 text-xs">
-        <div><span className="text-[var(--muted-foreground)]">文件：</span>{report.fileName} · {(report.fileSize / 1024 / 1024).toFixed(1)} MiB</div>
-        <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">归档 SHA-256：</span>{report.archiveSha256}</div>
-        <div><span className="text-[var(--muted-foreground)]">分析时间：</span>{new Date(report.createdAt).toLocaleString("zh-CN")}</div>
+        <div><span className="text-[var(--muted-foreground)]">{t("artifact.label.file")}</span>{report.fileName} · {(report.fileSize / 1024 / 1024).toFixed(1)} MiB</div>
+        <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">{t("artifact.label.archiveSha256")}</span>{report.archiveSha256}</div>
+        <div><span className="text-[var(--muted-foreground)]">{t("artifact.label.analyzedAt")}</span>{fmt.dateTime(report.createdAt)}</div>
       </div>
       {report.runtimeEvidenceTruncated && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700">
-        运行时证据分组超过 1000 条，本页展示高频且最近的 1000 条；原始事件仍完整保留。
+        {t("artifact.runtimeTruncated")}
       </div>}
       <div className="space-y-2">
         {report.images.map((image, index) => <details key={`${image.relativePath}-${image.architecture}-${index}`} className="rounded-md border border-[var(--border)] p-3">
           <summary className="cursor-pointer text-sm font-medium">
-            {image.relativePath} · {image.architecture} · {signatureLabel(image.signatureStatus)}
+            {image.relativePath} · {image.architecture} · {signatureLabel(t, image.signatureStatus)}
           </summary>
           <div className="mt-3 grid gap-2 text-xs">
-            <div className="break-all"><span className="text-[var(--muted-foreground)]">UUID：</span>{image.imageUuid ?? "无"}</div>
-            <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">__TEXT SHA-256：</span>{image.textSha256}</div>
-            <div>Swift metadata：{image.hasSwiftMetadata ? "有" : "无"}；Swift {image.swiftSymbolCount} / C++ {image.cppSymbolCount} / C {image.cSymbolCount} / 导入 {image.importedSymbolCount}</div>
+            <div className="break-all"><span className="text-[var(--muted-foreground)]">{t("artifact.label.uuid")}</span>{image.imageUuid ?? t("artifact.none")}</div>
+            <div className="break-all font-mono"><span className="font-sans text-[var(--muted-foreground)]">{t("artifact.label.textSha256")}</span>{image.textSha256}</div>
+            <div>{t("artifact.image.symbolSummary", { metadata: image.hasSwiftMetadata ? t("artifact.present") : t("artifact.none"), swift: image.swiftSymbolCount, cpp: image.cppSymbolCount, c: image.cSymbolCount, imported: image.importedSymbolCount })}</div>
             <div>
-              dSYM：{image.debugSymbolCount > 0 ? `LC_UUID 匹配，恢复 ${image.debugSymbolCount} 个内部符号` : "未匹配到对应 dSYM"}
-              {image.debugSymbolsTruncated ? "（达到入库上限）" : ""}
+              {image.debugSymbolCount > 0 ? t("artifact.image.dsymMatched", { count: image.debugSymbolCount }) : t("artifact.image.dsymMissing")}
+              {image.debugSymbolsTruncated ? t("artifact.image.dsymTruncated") : ""}
             </div>
-            <EvidenceList title="签名证书" values={image.signingCertificates.map((cert) => `${cert.commonName ?? "未知主体"} · ${cert.organizationalUnit ?? cert.organization ?? "-"} · ${cert.sha256}`)} />
+            <EvidenceList title={t("artifact.list.certificates")} values={image.signingCertificates.map((cert) => `${cert.commonName ?? t("artifact.unknownSubject")} · ${cert.organizationalUnit ?? cert.organization ?? "-"} · ${cert.sha256}`)} />
             <RuntimeEvidenceView image={image} buildNumber={report.runtimeBuildNumber} />
-            <EvidenceList title="依赖库" values={image.linkedLibraries} />
-            <EvidenceList title="导入符号" values={image.importedSymbols} />
-            <EvidenceList title="Swift 符号" values={image.swiftSymbols} />
-            <EvidenceList title="C++ 符号" values={image.cppSymbols} />
-            <EvidenceList title="C 符号" values={image.cSymbols} />
-            <EvidenceList title="dSYM 内部符号样本" values={image.debugSymbolSample} />
-            {image.symbolsTruncated && <div className="text-amber-600">符号很多，页面证据已截断；顶部计数仍是完整数量。</div>}
+            <EvidenceList title={t("artifact.list.linkedLibraries")} values={image.linkedLibraries} />
+            <EvidenceList title={t("artifact.metric.importedSymbols")} values={image.importedSymbols} />
+            <EvidenceList title={t("artifact.metric.swiftSymbols")} values={image.swiftSymbols} />
+            <EvidenceList title={t("artifact.metric.cppSymbols")} values={image.cppSymbols} />
+            <EvidenceList title={t("artifact.metric.cSymbols")} values={image.cSymbols} />
+            <EvidenceList title={t("artifact.list.debugSymbolSample")} values={image.debugSymbolSample} />
+            {image.symbolsTruncated && <div className="text-amber-600">{t("artifact.image.symbolsTruncated")}</div>}
           </div>
         </details>)}
       </div>
@@ -256,46 +261,50 @@ function ArtifactReportView({ report }: { report: ArtifactReport }) {
 }
 
 function RuntimeEvidenceView({ image, buildNumber }: { image: ArtifactImage; buildNumber: number | null }) {
+  const t = useT("pulse");
   if (!image.imageUuid) {
-    return <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-amber-700">镜像没有 LC_UUID，不能与运行时证据可靠关联。</div>;
+    return <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-amber-700">{t("artifact.runtime.noUuid")}</div>;
   }
   if (image.runtimeEvidence.length === 0) {
     return <div className="rounded border border-[var(--border)] p-2 text-[var(--muted-foreground)]">
-      LC_UUID 已建立关联键；构建 {buildNumber ?? "—"} 暂无这个镜像的运行时证据。
+      {t("artifact.runtime.empty", { build: buildNumber ?? "—" })}
     </div>;
   }
   const networks = image.runtimeEvidence.filter((item) => item.category === "network");
   const behaviors = image.runtimeEvidence.filter((item) => ["api", "permission", "method"].includes(item.category));
   return <div className="space-y-2 rounded border border-blue-500/30 bg-blue-500/5 p-3">
     <div className="font-medium text-blue-700 dark:text-blue-300">
-      LC_UUID 精确关联 · 构建 {buildNumber ?? "—"} · {image.runtimeEvidence.length} 组运行时证据
+      {t("artifact.runtime.matched", { build: buildNumber ?? "—", count: image.runtimeEvidence.length })}
     </div>
-    <EvidenceList title="运行时调用 / 权限 / 内部方法" values={behaviors.map(runtimeEvidenceLabel)} />
-    <EvidenceList title="运行时网络目的地" values={networks.map(runtimeEvidenceLabel)} />
+    <EvidenceList title={t("artifact.runtime.behaviors")} values={behaviors.map((item) => runtimeEvidenceLabel(t, item))} />
+    <EvidenceList title={t("artifact.runtime.networks")} values={networks.map((item) => runtimeEvidenceLabel(t, item))} />
   </div>;
 }
 
-function runtimeEvidenceLabel(item: RuntimeEvidence): string {
+function runtimeEvidenceLabel(t: Translate, item: RuntimeEvidence): string {
   const action = item.detail ? `${item.name} · ${item.detail}` : item.name;
   const caller = item.resolvedCallerSymbol ?? item.callerSymbol;
   const path = item.resolvedCallPath ?? item.callPath;
   return [
     action,
-    caller ? `调用点 ${caller}` : item.callsiteOffset != null ? `调用点 +0x${item.callsiteOffset.toString(16)}（待 dSYM）` : null,
-    path ? `路径 ${path}` : null,
-    `${item.occurrences} 次 / ${item.devices} 台设备`,
+    caller ? t("artifact.runtime.caller", { caller }) : item.callsiteOffset != null ? t("artifact.runtime.callerOffset", { offset: `+0x${item.callsiteOffset.toString(16)}` }) : null,
+    path ? t("artifact.runtime.path", { path }) : null,
+    t("artifact.runtime.counts", { occurrences: item.occurrences, devices: item.devices }),
   ].filter(Boolean).join(" · ");
 }
 
 function EvidenceList({ title, values }: { title: string; values: string[] }) {
+  const t = useT("pulse");
   if (values.length === 0) return null;
-  return <details><summary className="cursor-pointer text-[var(--muted-foreground)]">{title}（{values.length}）</summary>
+  return <details><summary className="cursor-pointer text-[var(--muted-foreground)]">{t("artifact.list.withCount", { title, count: values.length })}</summary>
     <div className="mt-1 max-h-48 overflow-auto rounded bg-black/5 p-2 font-mono dark:bg-white/5">
       {values.map((value, index) => <div key={`${value}-${index}`} className="break-all">{value}</div>)}
     </div>
   </details>;
 }
 
-function signatureLabel(status: string): string {
-  return ({ signed: "证书签名", adhoc: "临时签名", unsigned: "未签名", invalid: "签名异常" } as Record<string, string>)[status] ?? status;
+const SIGNATURE_STATUSES = new Set(["signed", "adhoc", "unsigned", "invalid"]);
+
+function signatureLabel(t: Translate, status: string): string {
+  return SIGNATURE_STATUSES.has(status) ? t(`artifact.signature.${status}`) : status;
 }

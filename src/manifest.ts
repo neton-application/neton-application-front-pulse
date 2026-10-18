@@ -5,6 +5,7 @@ import { defineFrontModule } from "@neton/application-front-contract";
 export default defineFrontModule({
   id: "pulse",
   contractVersion: "1.0.0",
+  locales: [{ lang: "zh-CN", entry: "zh-CN" }, { lang: "en-US", entry: "en-US" }],
   pages: [
     { key: "pulse/overview/index", path: "/pulse/overview", entry: "overview", rendering: "client" },
     { key: "pulse/apps/index", path: "/pulse/apps", entry: "apps", rendering: "client" },

@@ -8,7 +8,8 @@ import {
   PageHeader, Pagination, Select, type DataColumn,
 } from "@neton/application-front-kit";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
-import { timeAgo } from "../pulse-ui";
+import { useFormat, useT } from "@neton/application-front-runtime/i18n";
+import { useTimeAgo } from "../pulse-ui";
 
 interface Alert {
   id: number; projectId: string; moduleName: string; severity: string; label: string;
@@ -34,42 +35,39 @@ interface Evidence {
   sensitiveApis: EvidenceItem[]; permissions: EvidenceItem[];
 }
 
-const SEVERITY_LABEL: Record<string, string> = { info: "记录", warn: "关注", critical: "严重" };
 const SEVERITY_CLASS: Record<string, string> = {
   info: "text-[var(--muted-foreground)]",
   warn: "text-amber-600 font-medium",
   critical: "text-red-600 font-semibold",
 };
-const STATUS_LABEL: Record<number, string> = { 0: "待处理", 1: "已确认", 2: "已忽略" };
-const KIND_LABEL: Record<string, string> = { module: "结构", behavior: "动作" };
-/** 敏感 API 的中文名；未知的直接显示原始事件名，不猜。 */
-const API_LABEL: Record<string, string> = {
-  pasteboard_read: "读取剪贴板",
-  advertising_id_read: "读取广告标识 IDFA",
-  vendor_id_read: "读取设备标识 IDFV",
-  carrier_info_read: "读取运营商信息",
-  location_start: "开始采集位置",
-  photo_library_status_read: "查询相册权限",
-  photo_library_permission_request: "请求相册权限",
-  network_request: "发起网络请求",
-  location_permission_request: "请求位置权限",
-  user_agent_read: "读取 User-Agent",
-  user_defaults_read: "读取 UserDefaults",
-  user_defaults_write: "写入 UserDefaults",
-  http_cookie_read: "读取 HTTP Cookie",
-  camera_microphone_permission_request: "请求相机或麦克风权限",
-  microphone_permission_request: "请求麦克风权限",
-  contacts_permission_request: "请求通讯录权限",
-  tracking_permission_request: "请求跟踪权限",
-  notification_permission_request: "请求通知权限",
-  calendar_reminders_permission_request: "请求日历或提醒事项权限",
-  calendar_permission_request: "请求日历权限",
-  reminders_permission_request: "请求提醒事项权限",
-  health_permission_request: "请求健康数据权限",
-  webview_message_bridge_installed: "安装 WebView 消息桥",
-  webview_script_injected: "注入 WebView 脚本",
-  webview_javascript_evaluated: "执行 WebView JavaScript",
-};
+/** 敏感 API 的名称（词条 `audit.api.<name>`）；未知的直接显示原始事件名，不猜。 */
+const KNOWN_APIS = new Set([
+  "pasteboard_read",
+  "advertising_id_read",
+  "vendor_id_read",
+  "carrier_info_read",
+  "location_start",
+  "photo_library_status_read",
+  "photo_library_permission_request",
+  "network_request",
+  "location_permission_request",
+  "user_agent_read",
+  "user_defaults_read",
+  "user_defaults_write",
+  "http_cookie_read",
+  "camera_microphone_permission_request",
+  "microphone_permission_request",
+  "contacts_permission_request",
+  "tracking_permission_request",
+  "notification_permission_request",
+  "calendar_reminders_permission_request",
+  "calendar_permission_request",
+  "reminders_permission_request",
+  "health_permission_request",
+  "webview_message_bridge_installed",
+  "webview_script_injected",
+  "webview_javascript_evaluated",
+]);
 
 /**
  * 三方插件审计。客户端只上报「随包分发了哪些镜像」，不带任何结论；
@@ -79,6 +77,13 @@ const API_LABEL: Record<string, string> = {
  * 不是一万条告警——后者没人看得完。设备数来自去重明细，不是事件数近似。
  */
 export default function Page() {
+  const t = useT("pulse");
+  const fmt = useFormat();
+  const timeAgo = useTimeAgo();
+  const severityLabel = (severity: string) => (severity in SEVERITY_CLASS ? t(`audit.severity.${severity}`) : severity);
+  const statusLabel = (status: number) => (status >= 0 && status <= 2 ? t(`audit.status.${status}`) : String(status));
+  const kindLabel = (kind: string) => (kind === "module" || kind === "behavior" ? t(`audit.kind.${kind}`) : kind);
+  const apiLabel = (name: string): string | undefined => (KNOWN_APIS.has(name) ? t(`audit.api.${name}`) : undefined);
   const queryClient = useQueryClient();
   const { scope, setScope } = usePulseScope();
   // 证据是一次取回的数组（它本来就是聚合结果），所以搜索与翻页都在前端做。
@@ -119,72 +124,72 @@ export default function Page() {
 
   const alertColumns: DataColumn<Alert>[] = [
     {
-      key: "severity", header: "级别",
-      cell: (r) => <span className={SEVERITY_CLASS[r.severity] ?? ""}>{SEVERITY_LABEL[r.severity] ?? r.severity}</span>,
+      key: "severity", header: t("auditRule.field.severity"),
+      cell: (r) => <span className={SEVERITY_CLASS[r.severity] ?? ""}>{severityLabel(r.severity)}</span>,
     },
     {
-      key: "kind", header: "类型",
+      key: "kind", header: t("common.field.type"),
       cell: (r) => (
         <span className={r.kind === "behavior" ? "text-blue-600" : "text-[var(--muted-foreground)]"}>
-          {KIND_LABEL[r.kind] ?? r.kind}
+          {kindLabel(r.kind)}
         </span>
       ),
     },
-    { key: "moduleName", header: "模块", cell: (r) => <span className="font-medium">{r.moduleName}</span> },
+    { key: "moduleName", header: t("audit.column.module"), cell: (r) => <span className="font-medium">{r.moduleName}</span> },
     {
-      key: "api", header: "行为",
+      key: "api", header: t("audit.column.api"),
       // 结构告警没有行为可言，留空而不是编一个。
-      cell: (r) => (r.api ? (API_LABEL[r.api] ?? r.api) : <span className="text-[var(--muted-foreground)]">—</span>),
+      cell: (r) => (r.api ? (apiLabel(r.api) ?? r.api) : <span className="text-[var(--muted-foreground)]">—</span>),
     },
     {
-      key: "detail", header: "目的地 / 明细",
+      key: "detail", header: t("audit.column.detail"),
       // 网络请求的目的地已在客户端剥掉 query 与 fragment；这里存的是端点，不是凭证。
       cell: (r) => (r.detail ? <code className="text-xs">{r.detail}</code> : <span className="text-[var(--muted-foreground)]">—</span>),
     },
-    { key: "label", header: "说明", cell: (r) => r.label || "-" },
-    { key: "note", header: "备注", cell: (r) => <span className="text-xs text-[var(--muted-foreground)]">{r.note ?? "-"}</span> },
+    { key: "label", header: t("audit.column.label"), cell: (r) => r.label || "-" },
+    { key: "note", header: t("common.field.remark"), cell: (r) => <span className="text-xs text-[var(--muted-foreground)]">{r.note ?? "-"}</span> },
     // 设备数说明影响面，出现次数说明频率——两个都要，只有一个都会误导。
-    { key: "deviceCount", header: "影响设备", cell: (r) => <span className="tabular-nums">{r.deviceCount}</span> },
+    { key: "deviceCount", header: t("common.field.affectedDevices"), cell: (r) => <span className="tabular-nums">{r.deviceCount}</span> },
     // 调用次数只有动作告警有意义：结构是「在不在」，没有频率一说。
     {
-      key: "callCount", header: "调用次数",
+      key: "callCount", header: t("audit.column.callCount"),
       cell: (r) => (r.kind === "behavior" ? <span className="tabular-nums">{r.callCount}</span> : <span className="text-[var(--muted-foreground)]">—</span>),
     },
-    { key: "occurrences", header: "上报次数", cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
+    { key: "occurrences", header: t("audit.column.occurrences"), cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
     {
-      key: "lastSeenAt", header: "最近出现",
-      cell: (r) => <span title={r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : ""}>{timeAgo(r.lastSeenAt)}</span>,
+      key: "lastSeenAt", header: t("audit.column.lastSeenAt"),
+      cell: (r) => <span title={r.lastSeenAt ? fmt.dateTime(r.lastSeenAt) : ""}>{timeAgo(r.lastSeenAt)}</span>,
     },
-    { key: "status", header: "状态", cell: (r) => STATUS_LABEL[r.status] ?? String(r.status) },
+    { key: "status", header: t("common.field.status"), cell: (r) => statusLabel(r.status) },
     {
-      key: "actions", header: "操作", className: "text-right", headerClassName: "text-right",
+      key: "actions", header: t("common.field.actions"), className: "text-right", headerClassName: "text-right",
       cell: (r) => (
         <div className="flex justify-end gap-2 whitespace-nowrap">
-          {r.status !== 1 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 1)}>确认</Button>}
-          {r.status !== 2 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 2)}>忽略</Button>}
-          {r.status !== 0 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 0)}>重新打开</Button>}
+          {r.status !== 1 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 1)}>{t("audit.action.confirm")}</Button>}
+          {r.status !== 2 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 2)}>{t("common.action.ignore")}</Button>}
+          {r.status !== 0 && <Button variant="outline" size="sm" onClick={() => void triage(r.id, 0)}>{t("audit.action.reopen")}</Button>}
         </div>
       ),
     },
   ];
 
   const ruleColumns: DataColumn<Rule>[] = [
-    { key: "pattern", header: "匹配模式", cell: (r) => <code className="text-xs">{r.pattern}</code> },
-    { key: "label", header: "名称", cell: (r) => r.label || "-" },
+    { key: "pattern", header: t("auditRule.field.pattern"), cell: (r) => <code className="text-xs">{r.pattern}</code> },
+    { key: "label", header: t("common.field.name"), cell: (r) => r.label || "-" },
     {
-      key: "severity", header: "级别",
-      cell: (r) => <span className={SEVERITY_CLASS[r.severity] ?? ""}>{SEVERITY_LABEL[r.severity] ?? r.severity}</span>,
+      key: "severity", header: t("auditRule.field.severity"),
+      cell: (r) => <span className={SEVERITY_CLASS[r.severity] ?? ""}>{severityLabel(r.severity)}</span>,
     },
-    { key: "appId", header: "适用范围", cell: (r) => (r.appId ? `应用 #${r.appId}` : "全局") },
-    { key: "note", header: "备注", cell: (r) => <span className="text-xs text-[var(--muted-foreground)]">{r.note ?? "-"}</span> },
-    { key: "status", header: "状态", cell: (r) => (r.status === 1 ? "启用" : "停用") },
+    { key: "appId", header: t("audit.column.scope"), cell: (r) => (r.appId ? t("audit.scope.app", { appId: r.appId }) : t("audit.scope.global")) },
+    { key: "note", header: t("common.field.remark"), cell: (r) => <span className="text-xs text-[var(--muted-foreground)]">{r.note ?? "-"}</span> },
+    { key: "status", header: t("common.field.status"), cell: (r) => (r.status === 1 ? t("common.status.enabled") : t("common.status.disabled")) },
   ];
 
   const evidenceColumns: DataColumn<EvidenceItem>[] = [
-    { key: "name", header: "证据", cell: (r) => <span className="font-medium">{API_LABEL[r.name] ?? r.name}</span> },
-    { key: "moduleName", header: "来源模块", cell: (r) => <code className="text-xs">{r.moduleName ?? "—"}</code> },
+    { key: "name", header: t("audit.column.evidence"), cell: (r) => <span className="font-medium">{apiLabel(r.name) ?? r.name}</span> },
+    { key: "moduleName", header: t("common.field.sourceModule"), cell: (r) => <code className="text-xs">{r.moduleName ?? "—"}</code> },
     {
-      key: "callerSymbol", header: "插件内部调用点",
+      key: "callerSymbol", header: t("audit.column.callerSymbol"),
       cell: (r) => (
         <div className="max-w-2xl space-y-1 font-mono text-xs">
           <div className="break-all">{r.callerSymbol ?? "—"}</div>
@@ -193,11 +198,11 @@ export default function Page() {
       ),
     },
     {
-      key: "detail", header: "目的地 / 声明 / 调用",
+      key: "detail", header: t("audit.column.evidenceDetail"),
       cell: (r) => <code className="block max-w-3xl break-all text-xs">{r.detail ?? "—"}</code>,
     },
     {
-      key: "fingerprint", header: "二进制 / 调用链",
+      key: "fingerprint", header: t("audit.column.fingerprint"),
       cell: (r) => (
         <div className="space-y-1 font-mono text-[11px]">
           <div>{r.imageUuid ? `UUID ${r.imageUuid}` : "UUID —"}</div>
@@ -205,22 +210,22 @@ export default function Page() {
         </div>
       ),
     },
-    { key: "devices", header: "设备", cell: (r) => <span className="tabular-nums">{r.devices}</span> },
-    { key: "occurrences", header: "次数", cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
-    { key: "lastSeenAt", header: "最近观察", cell: (r) => new Date(r.lastSeenAt).toLocaleString("zh-CN") },
+    { key: "devices", header: t("common.field.devices"), cell: (r) => <span className="tabular-nums">{r.devices}</span> },
+    { key: "occurrences", header: t("common.field.count"), cell: (r) => <span className="tabular-nums">{r.occurrences}</span> },
+    { key: "lastSeenAt", header: t("audit.column.lastObserved"), cell: (r) => fmt.dateTime(r.lastSeenAt) },
   ];
 
   const evidenceGroups: Array<[typeof evidenceKind, string]> = [
-    ["modules", "插件与动态库"],
-    ["internalMethods", "插件内部方法"],
-    ["networkDestinations", "联网地址"],
-    ["sensitiveApis", "敏感 API"],
-    ["permissions", "权限与声明"],
+    ["modules", t("audit.evidence.modules")],
+    ["internalMethods", t("audit.evidence.internalMethods")],
+    ["networkDestinations", t("audit.evidence.networkDestinations")],
+    ["sensitiveApis", t("audit.evidence.sensitiveApis")],
+    ["permissions", t("audit.evidence.permissions")],
   ];
   const allEvidence = evidence.data?.[evidenceKind] ?? [];
   const keyword = evidenceSearch.trim().toLowerCase();
   const filteredEvidence = keyword
-    ? allEvidence.filter((r) => [r.name, API_LABEL[r.name], r.moduleName, r.detail, r.callerSymbol]
+    ? allEvidence.filter((r) => [r.name, apiLabel(r.name), r.moduleName, r.detail, r.callerSymbol]
         .some((v) => (v ?? "").toLowerCase().includes(keyword)))
     : allEvidence;
   const currentEvidence = filteredEvidence.slice((evidencePage - 1) * evidenceSize, evidencePage * evidenceSize);
@@ -229,9 +234,9 @@ export default function Page() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <PageHeader
-          eyebrow="PULSE"
-          title="安全审计"
-          description="先展示客户端观察到的证据，再由规则判断风险。没有规则也不会隐藏插件、联网地址、敏感 API 和权限使用。"
+          eyebrow={t("common.eyebrow")}
+          title={t("audit.title")}
+          description={t("audit.description")}
         />
         <PulseScopeSelector scope={scope} onChange={setScope} />
       </div>
@@ -239,7 +244,7 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>观察证据</CardTitle>
+            <CardTitle>{t("audit.evidence.title")}</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
               {evidenceGroups.map(([key, label]) => (
                 <Button
@@ -253,7 +258,7 @@ export default function Page() {
               ))}
               <Input
                 className="h-8 w-56"
-                placeholder="搜索名称 / 模块 / 地址"
+                placeholder={t("audit.evidence.search")}
                 value={evidenceSearch}
                 onChange={(e) => { setEvidenceSearch(e.target.value); setEvidencePage(1); }}
               />
@@ -266,8 +271,8 @@ export default function Page() {
             rows={currentEvidence}
             rowKey={(r) => `${r.category}-${r.name}-${r.moduleName ?? ""}-${r.stackFingerprint ?? ""}-${r.detail ?? ""}`}
             loading={evidence.isLoading}
-            emptyTitle={keyword ? "没有匹配的证据" : "当前范围没有这类证据"}
-            emptyDescription="这表示尚未观察到，并不代表对应能力已通过审计。"
+            emptyTitle={keyword ? t("audit.evidence.emptyMatch") : t("audit.evidence.empty")}
+            emptyDescription={t("audit.evidence.emptyDescription")}
           />
           <Pagination
             page={evidencePage}
@@ -283,25 +288,25 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>告警</CardTitle>
+            <CardTitle>{t("audit.alerts.title")}</CardTitle>
             <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); setAlertFilters(alertDraft); setAlertPage(1); }}>
-                <Field label="状态">
+                <Field label={t("common.field.status")}>
                   <Select className="h-8 w-32" value={alertDraft.status} onChange={(e) => setAlertDraft({ ...alertDraft, status: e.target.value })}>
-                    <option value="">全部</option>
-                    <option value="0">待处理</option>
-                    <option value="1">已确认</option>
-                    <option value="2">已忽略</option>
+                    <option value="">{t("common.filter.all")}</option>
+                    <option value="0">{t("audit.status.0")}</option>
+                    <option value="1">{t("audit.status.1")}</option>
+                    <option value="2">{t("audit.status.2")}</option>
                   </Select>
                 </Field>
-                <Field label="级别">
+                <Field label={t("auditRule.field.severity")}>
                   <Select className="h-8 w-32" value={alertDraft.severity} onChange={(e) => setAlertDraft({ ...alertDraft, severity: e.target.value })}>
-                    <option value="">全部</option>
-                    <option value="critical">严重</option>
-                    <option value="warn">关注</option>
-                    <option value="info">记录</option>
+                    <option value="">{t("common.filter.all")}</option>
+                    <option value="critical">{t("audit.severity.critical")}</option>
+                    <option value="warn">{t("audit.severity.warn")}</option>
+                    <option value="info">{t("audit.severity.info")}</option>
                   </Select>
                 </Field>
-              <Button type="submit" size="sm">查询</Button>
+              <Button type="submit" size="sm">{t("common.action.search")}</Button>
             </form>
           </div>
         </CardHeader>
@@ -311,8 +316,8 @@ export default function Page() {
             rows={alerts.data?.list ?? []}
             rowKey={(r) => String(r.id)}
             loading={alerts.isLoading}
-            emptyTitle={alertFilters.status === "0" ? "没有待处理告警" : "没有符合条件的告警"}
-            emptyDescription="客户端上报的随包镜像命中规则后，会在这里按模块聚合出现；没有启用的审计规则时不会产生任何告警。"
+            emptyTitle={alertFilters.status === "0" ? t("audit.alerts.emptyOpen") : t("audit.alerts.emptyMatch")}
+            emptyDescription={t("audit.alerts.emptyDescription")}
           />
           <Pagination
             page={alertPage}
@@ -328,8 +333,8 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>审计规则 · 前 20 条</CardTitle>
-            <a className="text-sm underline" href="/pulse/audit-rules">维护全部规则</a>
+            <CardTitle>{t("audit.rules.title")}</CardTitle>
+            <a className="text-sm underline" href="/pulse/audit-rules">{t("audit.rules.manage")}</a>
           </div>
         </CardHeader>
         <CardContent>
@@ -338,8 +343,8 @@ export default function Page() {
             rows={rules.data?.list ?? []}
             rowKey={(r) => String(r.id)}
             loading={rules.isLoading}
-            emptyTitle="还没有规则"
-            emptyDescription="规则决定哪些模块值得告警；大多数三方 SDK 不是恶意的，只是需要被知道存在。"
+            emptyTitle={t("audit.rules.emptyTitle")}
+            emptyDescription={t("audit.rules.emptyDescription")}
           />
         </CardContent>
       </Card>

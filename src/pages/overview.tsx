@@ -7,6 +7,7 @@ import {
   Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader,
   type DataColumn,
 } from "@neton/application-front-kit";
+import { useFormat, useT, type Formatters, type Translate } from "@neton/application-front-runtime/i18n";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface KindCount { kind: string; count: number }
@@ -31,26 +32,24 @@ interface ConnectionSummary {
   sdkVersions: Array<{ sdkVersion: string; devices: number; sessions: number }>;
 }
 
-/** 与后端 EventDomain / V005 的三个视图一一对应。 */
-const DOMAIN_LABELS: Record<string, string> = {
-  analytics: "产品分析",
-  apm: "质量监控",
-  security: "运行时安全",
-};
+/** 与后端 EventDomain / V005 的三个视图一一对应（词条 `overview.domain.<domain>`）。 */
+const DOMAINS = new Set(["analytics", "apm", "security"]);
 
-const topEventColumns: DataColumn<NameCount>[] = [
-  { key: "name", header: "事件名", cell: (r) => <span className="font-medium">{r.name}</span> },
-  { key: "count", header: "次数", cell: (r) => r.count.toLocaleString("en-US") },
+const topEventColumns = (t: Translate, fmt: Formatters): DataColumn<NameCount>[] => [
+  { key: "name", header: t("overview.column.eventName"), cell: (r) => <span className="font-medium">{r.name}</span> },
+  { key: "count", header: t("common.field.count"), cell: (r) => fmt.number(r.count) },
 ];
 
-const issueColumns: DataColumn<PulseEvent>[] = [
-  { key: "kind", header: "类型", cell: (r) => <span className={r.kind === "Crash" ? "text-red-600 font-medium" : "text-amber-600 font-medium"}>{r.kind}</span> },
-  { key: "name", header: "名称", cell: (r) => r.name },
-  { key: "session", header: "会话", cell: (r) => <code className="text-xs">{r.sessionId.slice(0, 12)}…</code> },
-  { key: "attrs", header: "详情", cell: (r) => <code className="text-xs">{r.attributes.slice(0, 60)}</code> },
+const issueColumns = (t: Translate): DataColumn<PulseEvent>[] => [
+  { key: "kind", header: t("common.field.type"), cell: (r) => <span className={r.kind === "Crash" ? "text-red-600 font-medium" : "text-amber-600 font-medium"}>{r.kind}</span> },
+  { key: "name", header: t("common.field.name"), cell: (r) => r.name },
+  { key: "session", header: t("common.field.session"), cell: (r) => <code className="text-xs">{r.sessionId.slice(0, 12)}…</code> },
+  { key: "attrs", header: t("common.field.detail"), cell: (r) => <code className="text-xs">{r.attributes.slice(0, 60)}</code> },
 ];
 
 export default function Page() {
+  const t = useT("pulse");
+  const fmt = useFormat();
   const { scope, setScope } = usePulseScope();
   const { data, isLoading } = useQuery({
     queryKey: ["pulse-overview", scope.projectId, scope.days],
@@ -68,14 +67,14 @@ export default function Page() {
   const scopeParams = pulseScopeParams(scope);
 
   const cards: Array<[string, number | undefined, string, string]> = [
-    ["当前在线", connections.data?.online, "text-emerald-600", "心跳有效期内的长连接设备"],
-    ["近 5 分钟活跃", connections.data?.activeLast5Minutes, "text-blue-600", "最近产生过事件的设备"],
-    ["累计用户", data?.totalUsers, "text-[var(--foreground)]", "按持久化设备标识去重"],
-    ["今日活跃", data?.todayActiveUsers, "text-blue-600", "今天产生过事件的用户"],
-    ["今日新增", data?.todayNewUsers, "text-emerald-600", "首次出现发生在今天"],
-    ["今日启动", data?.todayLaunches, "text-[var(--foreground)]", "app_launch 事件数"],
-    ["今日会话", data?.todaySessions, "text-[var(--foreground)]", "今天的去重会话"],
-    ["已登录用户", data?.identifiedUsers, "text-[var(--foreground)]", "宿主调用 identify 后可识别"],
+    [t("common.stat.online"), connections.data?.online, "text-emerald-600", t("overview.note.online")],
+    [t("common.stat.activeLast5Minutes"), connections.data?.activeLast5Minutes, "text-blue-600", t("overview.note.activeLast5Minutes")],
+    [t("overview.stat.totalUsers"), data?.totalUsers, "text-[var(--foreground)]", t("overview.note.totalUsers")],
+    [t("overview.stat.todayActiveUsers"), data?.todayActiveUsers, "text-blue-600", t("overview.note.todayActiveUsers")],
+    [t("overview.stat.todayNewUsers"), data?.todayNewUsers, "text-emerald-600", t("overview.note.todayNewUsers")],
+    [t("overview.stat.todayLaunches"), data?.todayLaunches, "text-[var(--foreground)]", t("overview.note.todayLaunches")],
+    [t("overview.stat.todaySessions"), data?.todaySessions, "text-[var(--foreground)]", t("overview.note.todaySessions")],
+    [t("overview.stat.identifiedUsers"), data?.identifiedUsers, "text-[var(--foreground)]", t("overview.note.identifiedUsers")],
   ];
   const maxKind = Math.max(1, ...(data?.byKind ?? []).map((k) => k.count));
   const maxActive = Math.max(1, ...(data?.activeTrend ?? []).map((d) => Math.max(d.activeUsers, d.newUsers)));
@@ -83,15 +82,15 @@ export default function Page() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <PageHeader eyebrow="PULSE" title="总览" description="用户活跃、使用趋势和应用质量的整体情况。" />
+        <PageHeader eyebrow={t("common.eyebrow")} title={t("overview.title")} description={t("overview.description")} />
         <PulseScopeSelector scope={scope} onChange={setScope} />
       </div>
 
       <div className="flex flex-wrap gap-2 text-sm">
-        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/events?${scopeParams}`}>查看事件</a>
-        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/versions?${scopeParams}`}>版本分析</a>
-        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/crash-issues?${scopeParams}`}>崩溃分析</a>
-        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/performance?${scopeParams}`}>性能数据</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/events?${scopeParams}`}>{t("overview.link.events")}</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/versions?${scopeParams}`}>{t("overview.link.versions")}</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/crash-issues?${scopeParams}`}>{t("overview.link.crashIssues")}</a>
+        <a className="rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--muted)]" href={`/pulse/performance?${scopeParams}`}>{t("overview.link.performance")}</a>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
@@ -99,7 +98,7 @@ export default function Page() {
           <div key={label} className="rounded-lg border border-[var(--border)] p-4">
             <div className="text-xs text-[var(--muted-foreground)]">{label}</div>
             <div className={`text-2xl font-semibold tabular-nums ${cls}`}>
-              {v === undefined ? "…" : v.toLocaleString("en-US")}
+              {v === undefined ? "…" : fmt.number(v)}
             </div>
             <div className="mt-1 text-[11px] text-[var(--muted-foreground)]">{note}</div>
           </div>
@@ -109,14 +108,14 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>{scope.days === "1" ? "今日" : `近 ${scope.days} 日`}活跃趋势</CardTitle>
-            <span className="text-xs text-[var(--muted-foreground)]">统计时区：{data?.timezone ?? "—"}</span>
+            <CardTitle>{scope.days === "1" ? t("overview.trend.titleToday") : t("overview.trend.titleDays", { days: scope.days })}</CardTitle>
+            <span className="text-xs text-[var(--muted-foreground)]">{t("overview.trend.timezone", { timezone: data?.timezone ?? "—" })}</span>
           </div>
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex gap-4 text-xs text-[var(--muted-foreground)]">
-            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-blue-500" />活跃用户</span>
-            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />新增用户</span>
+            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-blue-500" />{t("overview.trend.activeUsers")}</span>
+            <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />{t("overview.trend.newUsers")}</span>
           </div>
           <div className="grid h-48 grid-cols-7 items-end gap-2 border-b border-[var(--border)] pb-2">
             {(data?.activeTrend ?? []).map((day) => (
@@ -126,12 +125,12 @@ export default function Page() {
                   <div
                     className="w-3 rounded-t bg-blue-500"
                     style={{ height: `${Math.max(day.activeUsers ? 4 : 0, (day.activeUsers / maxActive) * 100)}%` }}
-                    title={`活跃 ${day.activeUsers}`}
+                    title={t("overview.trend.activeTip", { count: day.activeUsers })}
                   />
                   <div
                     className="w-3 rounded-t bg-emerald-500"
                     style={{ height: `${Math.max(day.newUsers ? 4 : 0, (day.newUsers / maxActive) * 100)}%` }}
-                    title={`新增 ${day.newUsers}`}
+                    title={t("overview.trend.newTip", { count: day.newUsers })}
                   />
                 </div>
                 <div className="truncate text-center text-[11px] text-[var(--muted-foreground)]">{day.date.slice(5)}</div>
@@ -139,7 +138,7 @@ export default function Page() {
             ))}
             {(!data || data.activeTrend.length === 0) && (
               <div className="col-span-7 self-center text-center text-sm text-[var(--muted-foreground)]">
-                {isLoading ? "加载中…" : "暂无活跃数据"}
+                {isLoading ? t("common.loading") : t("overview.trend.empty")}
               </div>
             )}
           </div>
@@ -148,28 +147,28 @@ export default function Page() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {([
-          ["累计事件", data?.totalEvents], ["累计会话", data?.sessions],
-          ["累计崩溃", data?.crashes], ["累计错误", data?.errors],
+          [t("overview.stat.totalEvents"), data?.totalEvents], [t("overview.stat.totalSessions"), data?.sessions],
+          [t("overview.stat.totalCrashes"), data?.crashes], [t("overview.stat.totalErrors"), data?.errors],
         ] as Array<[string, number | undefined]>).map(([label, value]) => (
           <div key={label} className="rounded-lg bg-[var(--muted)] px-4 py-3">
             <div className="text-xs text-[var(--muted-foreground)]">{label}</div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">{value === undefined ? "…" : value.toLocaleString("en-US")}</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">{value === undefined ? "…" : fmt.number(value)}</div>
           </div>
         ))}
       </div>
 
       <Card>
-        <CardHeader><CardTitle>业务域分布</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("overview.domain.title")}</CardTitle></CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-3">
             {(data?.byDomain ?? []).map((d) => (
               <div key={d.domain} className="rounded-lg border border-[var(--border)] p-4">
-                <div className="text-xs text-[var(--muted-foreground)]">{DOMAIN_LABELS[d.domain] ?? d.domain}</div>
-                <div className="text-xl font-semibold tabular-nums">{d.count.toLocaleString("en-US")}</div>
+                <div className="text-xs text-[var(--muted-foreground)]">{DOMAINS.has(d.domain) ? t(`overview.domain.${d.domain}`) : d.domain}</div>
+                <div className="text-xl font-semibold tabular-nums">{fmt.number(d.count)}</div>
               </div>
             ))}
             {(!data || data.byDomain.length === 0) && (
-              <div className="text-sm text-[var(--muted-foreground)]">{isLoading ? "加载中…" : "暂无数据"}</div>
+              <div className="text-sm text-[var(--muted-foreground)]">{isLoading ? t("common.loading") : t("common.noData")}</div>
             )}
           </div>
         </CardContent>
@@ -177,7 +176,7 @@ export default function Page() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>事件构成（按类型）</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("overview.byKind.title")}</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
               {(data?.byKind ?? []).map((k) => (
@@ -186,41 +185,41 @@ export default function Page() {
                   <div className="flex-1 h-3 rounded bg-[var(--muted)] overflow-hidden">
                     <div className="h-full bg-[var(--primary)]" style={{ width: `${(k.count / maxKind) * 100}%` }} />
                   </div>
-                  <div className="w-16 text-right text-xs tabular-nums">{k.count.toLocaleString("en-US")}</div>
+                  <div className="w-16 text-right text-xs tabular-nums">{fmt.number(k.count)}</div>
                 </div>
               ))}
               {(!data || data.byKind.length === 0) && (
-                <div className="text-sm text-[var(--muted-foreground)]">{isLoading ? "加载中…" : "暂无数据"}</div>
+                <div className="text-sm text-[var(--muted-foreground)]">{isLoading ? t("common.loading") : t("common.noData")}</div>
               )}
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Top 事件</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("overview.topEvents.title")}</CardTitle></CardHeader>
           <CardContent>
             <DataTable
-              columns={topEventColumns}
+              columns={topEventColumns(t, fmt)}
               rows={data?.topEvents ?? []}
               rowKey={(r) => r.name}
               loading={isLoading}
-              emptyTitle="暂无事件"
-              emptyDescription="客户端上报后，这里按事件名聚合。"
+              emptyTitle={t("overview.topEvents.emptyTitle")}
+              emptyDescription={t("overview.topEvents.emptyDescription")}
             />
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>最近崩溃与错误</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("overview.recentIssues.title")}</CardTitle></CardHeader>
         <CardContent>
           <DataTable
-            columns={issueColumns}
+            columns={issueColumns(t)}
             rows={data?.recentIssues ?? []}
             rowKey={(r) => String(r.id)}
             loading={isLoading}
-            emptyTitle="暂无崩溃或错误"
-            emptyDescription="APM 采集到的崩溃/错误会出现在这里。"
+            emptyTitle={t("overview.recentIssues.emptyTitle")}
+            emptyDescription={t("overview.recentIssues.emptyDescription")}
           />
         </CardContent>
       </Card>

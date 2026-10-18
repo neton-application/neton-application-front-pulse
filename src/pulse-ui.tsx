@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useFormat, useT } from "@neton/application-front-runtime/i18n";
 
 export interface StatCard {
   label: string;
@@ -27,6 +28,7 @@ const TONE: Record<string, string> = {
  * 于是既不敢用,也不敢质疑。
  */
 export function StatCards({ cards, columns = 4 }: { cards: StatCard[]; columns?: number }) {
+  const fmt = useFormat();
   const grid = columns >= 6 ? "sm:grid-cols-3 lg:grid-cols-6" : columns === 5 ? "sm:grid-cols-3 lg:grid-cols-5" : "sm:grid-cols-2 lg:grid-cols-4";
   return (
     <div className={`grid gap-3 ${grid}`}>
@@ -47,7 +49,7 @@ export function StatCards({ cards, columns = 4 }: { cards: StatCard[]; columns?:
           >
             <div className="text-xs text-[var(--muted-foreground)]">{card.label}</div>
             <div className={`text-2xl font-semibold tabular-nums ${TONE[card.tone ?? "default"]}`}>
-              {card.value === undefined ? "…" : card.value.toLocaleString("en-US")}
+              {card.value === undefined ? "…" : fmt.number(card.value)}
             </div>
             <div className="mt-1 text-[11px] leading-4 text-[var(--muted-foreground)]">{card.note}</div>
           </div>
@@ -58,16 +60,20 @@ export function StatCards({ cards, columns = 4 }: { cards: StatCard[]; columns?:
 }
 
 /** 相对时间。列表里「3 分钟前」比一串年月日时分秒更快判断新鲜度。 */
-export function timeAgo(ms: number | null | undefined): string {
-  if (!ms) return "-";
-  const diff = Date.now() - ms;
-  if (diff < 0) return new Date(ms).toLocaleString("zh-CN");
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "刚刚";
-  if (min < 60) return `${min} 分钟前`;
-  const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour} 小时前`;
-  const day = Math.floor(hour / 24);
-  if (day < 30) return `${day} 天前`;
-  return new Date(ms).toLocaleDateString("zh-CN");
+export function useTimeAgo(): (ms: number | null | undefined) => string {
+  const t = useT("pulse");
+  const fmt = useFormat();
+  return React.useCallback((ms: number | null | undefined) => {
+    if (!ms) return "-";
+    const diff = Date.now() - ms;
+    if (diff < 0) return fmt.dateTime(ms);
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return t("time.justNow");
+    if (min < 60) return t("time.minutesAgo", { count: min });
+    const hour = Math.floor(min / 60);
+    if (hour < 24) return t("time.hoursAgo", { count: hour });
+    const day = Math.floor(hour / 24);
+    if (day < 30) return t("time.daysAgo", { count: day });
+    return fmt.date(ms);
+  }, [t, fmt]);
 }

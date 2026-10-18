@@ -2,18 +2,21 @@
 
 import * as React from "react";
 import { ResourcePage } from "@neton/application-front-resource";
+import { useT } from "@neton/application-front-runtime/i18n";
 import { PulseScopeSelector, usePulseScope } from "../pulse-scope";
 
 /** 崩溃明细：原始流水，不归并。归并后的问题列表在 crash-issues。只读。 */
 export default function Page() {
+  const t = useT("pulse");
   const { scope, setScope } = usePulseScope();
   return (
     <ResourcePage
       config={{
         resourceKey: "pulse-crash",
-        eyebrow: "PULSE",
-        title: "崩溃明细",
-        description: "崩溃与错误的逐条原始记录——同一个 bug 发生一千次就是一千行。要按问题归并、分配状态、看堆栈符号化，请用「崩溃分析」；这一页用于核对某一次具体的上报。",
+        errorNamespace: "pulse",
+        eyebrow: t("common.eyebrow"),
+        title: t("crash.title"),
+        description: t("crash.description"),
         endpoint: "/pulse/apm",
         listPath: "page",
         readOnly: true,
@@ -22,18 +25,18 @@ export default function Page() {
         headerActions: <PulseScopeSelector scope={scope} onChange={setScope} />,
         initialFilters: { kind: "Crash" },
         fields: [
-          { key: "ts", label: "时间", format: "date" },
+          { key: "ts", label: t("common.field.time"), format: "date" },
           // Declared twice: front-resource takes table columns from the non-filter entries, so a
           // filter-only key is searchable but invisible in the table.
-          { key: "kind", label: "类型", filter: true, type: "select", options: [
-            { label: "Crash · 致命崩溃", value: "Crash" },
-            { label: "Error · 已捕获错误", value: "Error" },
+          { key: "kind", label: t("common.field.type"), filter: true, type: "select", options: [
+            { label: t("kind.Crash"), value: "Crash" },
+            { label: t("kind.Error"), value: "Error" },
           ] },
-          { key: "kind", label: "类型" },
-          { key: "name", label: "名称" },
-          { key: "sessionId", label: "会话", format: "mono", filter: true },
-          { key: "sessionId", label: "会话", format: "mono" },
-          { key: "attributes", label: "详情（message / stack）", format: "mono" },
+          { key: "kind", label: t("common.field.type") },
+          { key: "name", label: t("common.field.name") },
+          { key: "sessionId", label: t("common.field.session"), format: "mono", filter: true },
+          { key: "sessionId", label: t("common.field.session"), format: "mono" },
+          { key: "attributes", label: t("crash.field.attributes"), format: "mono" },
         ],
       }}
     />

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { apiFetch } from "@neton/application-front-runtime/client";
 import { useQuery } from "@neton/application-front-runtime/client-context";
+import { useT } from "@neton/application-front-runtime/i18n";
 import { Select } from "@neton/application-front-kit";
 
 interface AppRow { id: number; name: string; platform: string; appKey: string }
@@ -66,6 +67,7 @@ export function PulseScopeSelector({
   onChange: (scope: PulseScope) => void;
   showDays?: boolean;
 }) {
+  const t = useT("pulse");
   const apps = useQuery({
     queryKey: ["pulse-scope-apps"],
     queryFn: () => apiFetch<Page<AppRow>>("/admin/pulse/app/page?pageSize=200"),
@@ -74,9 +76,9 @@ export function PulseScopeSelector({
   return (
     <div className="flex flex-wrap items-end gap-2">
       <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
-        应用
+        {t("scope.app")}
         <Select value={scope.projectId} onChange={(e) => onChange({ ...scope, projectId: e.target.value })}>
-          <option value="">全部应用</option>
+          <option value="">{t("scope.allApps")}</option>
           {(apps.data?.list ?? []).map((app) => (
             <option key={app.id} value={app.appKey}>{app.name} · {app.platform}</option>
           ))}
@@ -84,11 +86,11 @@ export function PulseScopeSelector({
       </label>
       {showDays && (
         <label className="grid gap-1 text-xs text-[var(--muted-foreground)]">
-          时间范围
+          {t("scope.range")}
           <Select value={scope.days} onChange={(e) => onChange({ ...scope, days: e.target.value as PulseScope["days"] })}>
-            <option value="1">今天</option>
-            <option value="7">近 7 天</option>
-            <option value="30">近 30 天</option>
+            <option value="1">{t("scope.days.1")}</option>
+            <option value="7">{t("scope.days.7")}</option>
+            <option value="30">{t("scope.days.30")}</option>
           </Select>
         </label>
       )}

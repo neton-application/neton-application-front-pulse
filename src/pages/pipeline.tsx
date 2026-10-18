@@ -7,7 +7,8 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, DataTable, Input, PageHeader, Pagination,
   StatusBadge, type DataColumn,
 } from "@neton/application-front-kit";
-import { timeAgo } from "../pulse-ui";
+import { useFormat, useT, type Formatters, type Translate } from "@neton/application-front-runtime/i18n";
+import { useTimeAgo } from "../pulse-ui";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
 
 interface QueueDepth { work: number; retry: number; processing: number; dead: number; truncatedAt: number }
@@ -26,23 +27,23 @@ interface ConnectionSummary {
 }
 
 const shortId = (value: string) => value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
-const onlineColumns: DataColumn<OnlineConnection>[] = [
-  { key: "device", header: "设备", cell: (r) => <div><div className="font-medium">{r.deviceType}</div><code className="text-[11px] text-[var(--muted-foreground)]">{shortId(r.deviceId)}</code></div> },
-  { key: "platform", header: "平台", cell: (r) => r.platform },
-  { key: "app", header: "应用版本", cell: (r) => <span>{r.appVersion ?? "—"} <span className="text-xs text-[var(--muted-foreground)]">({r.buildNumber})</span></span> },
+const onlineColumns = (t: Translate, fmt: Formatters, timeAgo: (ms: number) => string): DataColumn<OnlineConnection>[] => [
+  { key: "device", header: t("pipeline.column.device"), cell: (r) => <div><div className="font-medium">{r.deviceType}</div><code className="text-[11px] text-[var(--muted-foreground)]">{shortId(r.deviceId)}</code></div> },
+  { key: "platform", header: t("common.field.platform"), cell: (r) => r.platform },
+  { key: "app", header: t("pipeline.column.appVersion"), cell: (r) => <span>{r.appVersion ?? "—"} <span className="text-xs text-[var(--muted-foreground)]">({r.buildNumber})</span></span> },
   { key: "sdk", header: "PulseKit", cell: (r) => <code className="text-xs">{r.sdkVersion}</code> },
-  { key: "package", header: "包名", cell: (r) => <code className="text-xs">{r.packageName ?? "—"}</code> },
+  { key: "package", header: t("common.field.packageName"), cell: (r) => <code className="text-xs">{r.packageName ?? "—"}</code> },
   {
-    key: "heartbeat", header: "最近心跳",
-    cell: (r) => <span title={new Date(r.lastHeartbeatAt).toLocaleString("zh-CN")}>{timeAgo(r.lastHeartbeatAt)}</span>,
+    key: "heartbeat", header: t("pipeline.column.lastHeartbeat"),
+    cell: (r) => <span title={fmt.dateTime(r.lastHeartbeatAt)}>{timeAgo(r.lastHeartbeatAt)}</span>,
   },
 ];
 
-const deadColumns: DataColumn<Envelope>[] = [
-  { key: "firstSeenMs", header: "首次入队", cell: (r) => (r.firstSeenMs ? new Date(r.firstSeenMs).toLocaleString("zh-CN") : "-") },
-  { key: "attempts", header: "尝试次数", cell: (r) => <span className="tabular-nums">{r.attempts}</span> },
-  { key: "lastError", header: "失败原因", cell: (r) => <span className="text-red-600 text-xs">{r.lastError ?? "-"}</span> },
-  { key: "payload", header: "批次内容", cell: (r) => <code className="text-xs">{r.payload.slice(0, 120)}{r.payload.length > 120 ? "…" : ""}</code> },
+const deadColumns = (t: Translate, fmt: Formatters): DataColumn<Envelope>[] => [
+  { key: "firstSeenMs", header: t("pipeline.column.firstSeen"), cell: (r) => (r.firstSeenMs ? fmt.dateTime(r.firstSeenMs) : "-") },
+  { key: "attempts", header: t("pipeline.column.attempts"), cell: (r) => <span className="tabular-nums">{r.attempts}</span> },
+  { key: "lastError", header: t("pipeline.column.lastError"), cell: (r) => <span className="text-red-600 text-xs">{r.lastError ?? "-"}</span> },
+  { key: "payload", header: t("pipeline.column.payload"), cell: (r) => <code className="text-xs">{r.payload.slice(0, 120)}{r.payload.length > 120 ? "…" : ""}</code> },
 ];
 
 /**
@@ -53,6 +54,9 @@ const deadColumns: DataColumn<Envelope>[] = [
  * 因此这里提供重放；但重放是对采集链路的写操作，根因没修就重放只会把死信再灌一遍。
  */
 export default function Page() {
+  const t = useT("pulse");
+  const fmt = useFormat();
+  const timeAgo = useTimeAgo();
   const queryClient = useQueryClient();
   const { scope, setScope } = usePulseScope();
   const [busy, setBusy] = React.useState(false);
@@ -106,39 +110,39 @@ export default function Page() {
   const truncated = (n: number | undefined) => (d && n !== undefined && n >= d.truncatedAt ? `${n}+` : String(n ?? "…"));
 
   const cards: Array<[string, string, string]> = [
-    ["待处理", truncated(d?.work), "text-[var(--foreground)]"],
-    ["处理中", truncated(d?.processing), d && d.processing > 0 ? "text-blue-600" : "text-[var(--foreground)]"],
-    ["重试中", truncated(d?.retry), d && d.retry > 0 ? "text-amber-600" : "text-[var(--foreground)]"],
-    ["死信", truncated(d?.dead), d && d.dead > 0 ? "text-red-600" : "text-[var(--foreground)]"],
-    ["累计入队", c ? c.enqueued.toLocaleString("en-US") : "…", "text-[var(--muted-foreground)]"],
-    ["累计入库", c ? c.consumed.toLocaleString("en-US") : "…", "text-[var(--muted-foreground)]"],
-    ["累计重试", c ? c.failed.toLocaleString("en-US") : "…", "text-[var(--muted-foreground)]"],
+    [t("pipeline.stat.work"), truncated(d?.work), "text-[var(--foreground)]"],
+    [t("pipeline.stat.processing"), truncated(d?.processing), d && d.processing > 0 ? "text-blue-600" : "text-[var(--foreground)]"],
+    [t("pipeline.stat.retry"), truncated(d?.retry), d && d.retry > 0 ? "text-amber-600" : "text-[var(--foreground)]"],
+    [t("pipeline.stat.dead"), truncated(d?.dead), d && d.dead > 0 ? "text-red-600" : "text-[var(--foreground)]"],
+    [t("pipeline.stat.enqueued"), c ? fmt.number(c.enqueued) : "…", "text-[var(--muted-foreground)]"],
+    [t("pipeline.stat.consumed"), c ? fmt.number(c.consumed) : "…", "text-[var(--muted-foreground)]"],
+    [t("pipeline.stat.failed"), c ? fmt.number(c.failed) : "…", "text-[var(--muted-foreground)]"],
   ];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <PageHeader
-          eyebrow="PULSE"
-          title="采集管道"
-          description="上报链路本身的健康状况：哪些客户端正连着、跑的是哪个 SDK 版本，以及事件从入队到落库的每一步有没有积压或丢弃。这一页看的是「数据有没有进来」，不是数据本身。"
+          eyebrow={t("common.eyebrow")}
+          title={t("pipeline.title")}
+          description={t("pipeline.description")}
         />
         <PulseScopeSelector scope={scope} onChange={setScope} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted-foreground)]">当前在线</div><div className="text-2xl font-semibold tabular-nums text-emerald-600">{connectionSummary.data?.online ?? "…"}</div></div>
-        <div className="rounded-lg border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted-foreground)]">近 5 分钟活跃</div><div className="text-2xl font-semibold tabular-nums text-blue-600">{connectionSummary.data?.activeLast5Minutes ?? "…"}</div></div>
-        <div className="rounded-lg border border-[var(--border)] p-4 sm:col-span-2"><div className="text-xs text-[var(--muted-foreground)]">近 30 日 PulseKit 版本</div><div className="mt-2 flex flex-wrap gap-2">{(connectionSummary.data?.sdkVersions ?? []).map((v) => <span key={v.sdkVersion} className="rounded bg-[var(--muted)] px-2 py-1 text-xs"><code>{v.sdkVersion}</code> · {v.devices} 台</span>)}{connectionSummary.data?.sdkVersions.length === 0 && <span className="text-sm text-[var(--muted-foreground)]">暂无数据</span>}</div></div>
+        <div className="rounded-lg border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted-foreground)]">{t("common.stat.online")}</div><div className="text-2xl font-semibold tabular-nums text-emerald-600">{connectionSummary.data?.online ?? "…"}</div></div>
+        <div className="rounded-lg border border-[var(--border)] p-4"><div className="text-xs text-[var(--muted-foreground)]">{t("common.stat.activeLast5Minutes")}</div><div className="text-2xl font-semibold tabular-nums text-blue-600">{connectionSummary.data?.activeLast5Minutes ?? "…"}</div></div>
+        <div className="rounded-lg border border-[var(--border)] p-4 sm:col-span-2"><div className="text-xs text-[var(--muted-foreground)]">{t("pipeline.sdkVersions")}</div><div className="mt-2 flex flex-wrap gap-2">{(connectionSummary.data?.sdkVersions ?? []).map((v) => <span key={v.sdkVersion} className="rounded bg-[var(--muted)] px-2 py-1 text-xs"><code>{v.sdkVersion}</code> · {t("common.devicesCount", { count: v.devices })}</span>)}{connectionSummary.data?.sdkVersions.length === 0 && <span className="text-sm text-[var(--muted-foreground)]">{t("common.noData")}</span>}</div></div>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>在线设备 · {onlineRows.length}</CardTitle>
+            <CardTitle>{t("pipeline.online.title", { count: onlineRows.length })}</CardTitle>
             <Input
               className="h-8 w-60"
-              placeholder="搜索设备 / 版本 / 包名"
+              placeholder={t("pipeline.online.search")}
               value={onlineSearch}
               onChange={(e) => { setOnlineSearch(e.target.value); setOnlinePage(1); }}
             />
@@ -146,12 +150,12 @@ export default function Page() {
         </CardHeader>
         <CardContent className="px-0 pb-0">
           <DataTable
-            columns={onlineColumns}
+            columns={onlineColumns(t, fmt, timeAgo)}
             rows={onlineRows.slice((onlinePage - 1) * onlineSize, onlinePage * onlineSize)}
             rowKey={(r) => r.connectionId}
             loading={online.isLoading}
-            emptyTitle={onlineKeyword ? "没有匹配的设备" : "暂无在线设备"}
-            emptyDescription="客户端完成 CLIENT_CONNECT 并持续心跳后会显示在这里。"
+            emptyTitle={onlineKeyword ? t("pipeline.online.emptyMatch") : t("pipeline.online.empty")}
+            emptyDescription={t("pipeline.online.emptyDescription")}
           />
           <Pagination
             page={onlinePage} pageSize={onlineSize} total={onlineRows.length}
@@ -174,28 +178,28 @@ export default function Page() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>死信队列</CardTitle>
+            <CardTitle>{t("pipeline.dead.title")}</CardTitle>
             <div className="flex items-center gap-2">
               <StatusBadge active={!status.data?.hasDeadLetters}>
-                {status.data?.hasDeadLetters ? "有待处理死信" : "正常"}
+                {status.data?.hasDeadLetters ? t("pipeline.dead.pending") : t("pipeline.dead.healthy")}
               </StatusBadge>
               <Button variant="outline" disabled={busy || !status.data?.hasDeadLetters} onClick={() => void run("replay")}>
-                重放全部
+                {t("pipeline.dead.replay")}
               </Button>
               <Button variant="outline" disabled={busy || !status.data?.hasDeadLetters} onClick={() => void run("purge")}>
-                清空
+                {t("pipeline.dead.purge")}
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <DataTable
-            columns={deadColumns}
+            columns={deadColumns(t, fmt)}
             rows={dead.data ?? []}
             rowKey={(r) => `${r.firstSeenMs}-${r.payload.slice(0, 32)}`}
             loading={dead.isLoading}
-            emptyTitle="没有死信"
-            emptyDescription="写入失败且重试用尽的批次会出现在这里，修复根因后可整批重放。"
+            emptyTitle={t("pipeline.dead.emptyTitle")}
+            emptyDescription={t("pipeline.dead.emptyDescription")}
           />
         </CardContent>
       </Card>

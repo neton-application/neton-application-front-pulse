@@ -8,7 +8,9 @@ import {
   Pagination, Select, Textarea, type DataColumn,
 } from "@neton/application-front-kit";
 import { PulseScopeSelector, pulseScopeParams, usePulseScope } from "../pulse-scope";
-import { StatCards, timeAgo } from "../pulse-ui";
+import { useDescribeError } from "@neton/application-front-runtime/errors";
+import { useFormat, useT } from "@neton/application-front-runtime/i18n";
+import { StatCards, useTimeAgo } from "../pulse-ui";
 
 interface Issue {
   id: number; projectId: string; fingerprint: string; title: string; kind: string; message: string;
@@ -26,7 +28,6 @@ interface Summary {
   crash: number; error: number; devices: number;
 }
 
-const STATUS_LABEL: Record<number, string> = { 0: "待处理", 1: "处理中", 2: "已解决", 3: "已忽略" };
 const STATUS_CLASS: Record<number, string> = {
   0: "bg-red-50 text-red-700 border-red-200",
   1: "bg-amber-50 text-amber-700 border-amber-200",
@@ -44,6 +45,12 @@ const hex = (n: number) => `0x${(n >>> 0 === n ? n : n).toString(16)}`;
  * 落库的符号会过期,原始地址不会。
  */
 export default function Page() {
+  const t = useT("pulse");
+  const fmt = useFormat();
+  const timeAgo = useTimeAgo();
+  const describeError = useDescribeError("pulse");
+  /** 处理状态 0..3（词条 `crashIssue.status.<n>`）；未知值原样显示。 */
+  const statusLabel = (status: number) => (status >= 0 && status <= 3 ? t(`crashIssue.status.${status}`) : String(status));
   const queryClient = useQueryClient();
   const [selected, setSelected] = React.useState<number | null>(null);
   const [symbolText, setSymbolText] = React.useState("");
@@ -89,110 +96,115 @@ export default function Page() {
   const uploadSymbols = async () => {
     const issue = detail.data?.issue;
     if (!issue?.appKey || !issue.buildNumber) {
-      setUploadMsg("该问题没有归属的构建号，无法确定符号表属于哪个版本。");
+      setUploadMsg(t("crashIssue.symbols.noBuild"));
       return;
     }
-    const res = await apiWrite<{ loaded: number }>("/admin/pulse/crash/symbols/upload", "POST", {
-      appKey: issue.appKey, buildNumber: issue.buildNumber, text: symbolText,
-    });
-    setUploadMsg(`已载入 ${res.loaded} 个符号。`);
-    setSymbolText("");
-    await queryClient.invalidateQueries({ queryKey: ["pulse-crash-detail"] });
+    try {
+      const res = await apiWrite<{ loaded: number }>("/admin/pulse/crash/symbols/upload", "POST", {
+        appKey: issue.appKey, buildNumber: issue.buildNumber, text: symbolText,
+      });
+      setUploadMsg(t("crashIssue.symbols.loaded", { count: res.loaded }));
+      setSymbolText("");
+      await queryClient.invalidateQueries({ queryKey: ["pulse-crash-detail"] });
+    } catch (error) {
+      // 符号表解析为空（SYMBOLS_EMPTY）等业务错误就地说明，而不是静默失败。
+      setUploadMsg(describeError(error));
+    }
   };
 
   const columns: DataColumn<Issue>[] = [
     {
-      key: "title", header: "问题",
+      key: "title", header: t("crashIssue.column.issue"),
       cell: (r) => (
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className={r.kind === "Error" ? "rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700" : "rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700"}>
-              {r.kind === "Error" ? "错误" : "崩溃"}
+              {r.kind === "Error" ? t("common.kind.error") : t("common.kind.crash")}
             </span>
             <span className="font-medium">{r.title}</span>
           </div>
           <div className="mt-0.5 max-w-xl truncate text-xs text-[var(--muted-foreground)]" title={r.message}>
-            {r.message || "无附加信息"}
+            {r.message || t("crashIssue.noMessage")}
           </div>
         </div>
       ),
     },
     // 设备数在前：影响面比频率更能决定优先级。
-    { key: "deviceCount", header: "影响设备", className: "text-right", headerClassName: "text-right", cell: (r) => <span className="tabular-nums font-medium">{r.deviceCount}</span> },
-    { key: "eventCount", header: "发生次数", className: "text-right", headerClassName: "text-right", cell: (r) => <span className="tabular-nums">{r.eventCount}</span> },
-    { key: "buildNumber", header: "构建", cell: (r) => <span className="tabular-nums">{r.buildNumber ?? "-"}</span> },
+    { key: "deviceCount", header: t("common.field.affectedDevices"), className: "text-right", headerClassName: "text-right", cell: (r) => <span className="tabular-nums font-medium">{r.deviceCount}</span> },
+    { key: "eventCount", header: t("crashIssue.column.eventCount"), className: "text-right", headerClassName: "text-right", cell: (r) => <span className="tabular-nums">{r.eventCount}</span> },
+    { key: "buildNumber", header: t("crashIssue.column.build"), cell: (r) => <span className="tabular-nums">{r.buildNumber ?? "-"}</span> },
     {
-      key: "lastSeenAt", header: "最近发生",
-      cell: (r) => <span title={r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString("zh-CN") : ""}>{timeAgo(r.lastSeenAt)}</span>,
+      key: "lastSeenAt", header: t("crashIssue.column.lastSeenAt"),
+      cell: (r) => <span title={r.lastSeenAt ? fmt.dateTime(r.lastSeenAt) : ""}>{timeAgo(r.lastSeenAt)}</span>,
     },
     {
-      key: "status", header: "状态",
+      key: "status", header: t("common.field.status"),
       cell: (r) => (
         <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-xs ${STATUS_CLASS[r.status] ?? ""}`}>
-          {STATUS_LABEL[r.status] ?? String(r.status)}
+          {statusLabel(r.status)}
         </span>
       ),
     },
     {
-      key: "actions", header: "操作", className: "text-right", headerClassName: "text-right",
+      key: "actions", header: t("common.field.actions"), className: "text-right", headerClassName: "text-right",
       cell: (r) => (
         <div className="flex justify-end gap-2 whitespace-nowrap">
-          <Button variant="outline" size="sm" onClick={() => { setSelected(r.id); setUploadMsg(null); }}>堆栈</Button>
-          {r.status !== 2 && <Button variant="outline" size="sm" onClick={() => void setStatus(r.id, 2)}>已解决</Button>}
-          {r.status !== 3 && <Button variant="outline" size="sm" onClick={() => void setStatus(r.id, 3)}>忽略</Button>}
+          <Button variant="outline" size="sm" onClick={() => { setSelected(r.id); setUploadMsg(null); }}>{t("crashIssue.action.stack")}</Button>
+          {r.status !== 2 && <Button variant="outline" size="sm" onClick={() => void setStatus(r.id, 2)}>{t("crashIssue.status.2")}</Button>}
+          {r.status !== 3 && <Button variant="outline" size="sm" onClick={() => void setStatus(r.id, 3)}>{t("common.action.ignore")}</Button>}
         </div>
       ),
     },
   ];
 
   const s = summary.data;
-  const scopeNote = scope.days === "1" ? "今日" : `近 ${scope.days} 日`;
+  const scopeNote = scope.days === "1" ? t("crashIssue.scope.today") : t("crashIssue.scope.days", { days: scope.days });
 
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="PULSE"
-        title="崩溃分析"
-        description="客户端上报的崩溃（致命）与错误（已捕获）按指纹归并为「问题」。分组依据是栈顶若干帧的静态地址（已去掉 ASLR 偏移），不是崩溃信息文本——同一个 bug 的文本常常带着每次不同的地址。列表按影响设备数排序。"
+        eyebrow={t("common.eyebrow")}
+        title={t("crashIssue.title")}
+        description={t("crashIssue.description")}
         actions={<PulseScopeSelector scope={scope} onChange={(next) => { setSelected(null); setPage(1); setScope(next); }} />}
       />
 
       <StatCards
         columns={5}
         cards={[
-          { label: "问题总数", value: s?.total, note: `${scopeNote}内有新发生的问题数（归并后）` },
-          { label: "待处理", value: s?.open, tone: "danger", note: "还没人认领，点此只看这些", onClick: () => applyFilters({ ...filters, status: "0" }), active: filters.status === "0" },
-          { label: "处理中", value: s?.inProgress, tone: "warning", note: "已认领，尚未发版修复", onClick: () => applyFilters({ ...filters, status: "1" }), active: filters.status === "1" },
-          { label: "致命崩溃", value: s?.crash, tone: "danger", note: "进程直接退出，用户当场丢失会话", onClick: () => applyFilters({ ...filters, kind: "Crash" }), active: filters.kind === "Crash" },
-          { label: "受影响设备次", value: s?.devices, note: "各问题影响设备数之和，同一台设备可重复计入" },
+          { label: t("crashIssue.stat.total"), value: s?.total, note: t("crashIssue.stat.totalNote", { scope: scopeNote }) },
+          { label: t("crashIssue.status.0"), value: s?.open, tone: "danger", note: t("crashIssue.stat.openNote"), onClick: () => applyFilters({ ...filters, status: "0" }), active: filters.status === "0" },
+          { label: t("crashIssue.status.1"), value: s?.inProgress, tone: "warning", note: t("crashIssue.stat.inProgressNote"), onClick: () => applyFilters({ ...filters, status: "1" }), active: filters.status === "1" },
+          { label: t("crashIssue.stat.crash"), value: s?.crash, tone: "danger", note: t("crashIssue.stat.crashNote"), onClick: () => applyFilters({ ...filters, kind: "Crash" }), active: filters.kind === "Crash" },
+          { label: t("crashIssue.stat.devices"), value: s?.devices, note: t("crashIssue.stat.devicesNote") },
         ]}
       />
 
       <FilterPanel onSubmit={(e) => { e.preventDefault(); applyFilters(draft); }}>
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-48 flex-1">
-            <Field label="类别">
+            <Field label={t("crashIssue.filter.kind")}>
               <Select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
-                <option value="">全部</option>
-                <option value="Crash">崩溃（致命）</option>
-                <option value="Error">错误（已捕获）</option>
+                <option value="">{t("common.filter.all")}</option>
+                <option value="Crash">{t("crashIssue.filter.kindCrash")}</option>
+                <option value="Error">{t("crashIssue.filter.kindError")}</option>
               </Select>
             </Field>
           </div>
           <div className="min-w-48 flex-1">
-            <Field label="处理状态">
+            <Field label={t("crashIssue.filter.status")}>
               <Select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })}>
-                <option value="">全部</option>
-                <option value="0">待处理</option>
-                <option value="1">处理中</option>
-                <option value="2">已解决</option>
-                <option value="3">已忽略</option>
+                <option value="">{t("common.filter.all")}</option>
+                <option value="0">{t("crashIssue.status.0")}</option>
+                <option value="1">{t("crashIssue.status.1")}</option>
+                <option value="2">{t("crashIssue.status.2")}</option>
+                <option value="3">{t("crashIssue.status.3")}</option>
               </Select>
             </Field>
           </div>
-          <Button type="button" variant="ghost" onClick={() => applyFilters({ kind: "", status: "" })}>重置</Button>
-          <Button type="submit">查询</Button>
-          <Button type="button" variant="outline" onClick={() => void listQuery.refetch()} disabled={listQuery.isFetching}>刷新</Button>
+          <Button type="button" variant="ghost" onClick={() => applyFilters({ kind: "", status: "" })}>{t("common.action.reset")}</Button>
+          <Button type="submit">{t("common.action.search")}</Button>
+          <Button type="button" variant="outline" onClick={() => void listQuery.refetch()} disabled={listQuery.isFetching}>{t("common.action.refresh")}</Button>
         </div>
       </FilterPanel>
 
@@ -202,9 +214,9 @@ export default function Page() {
           rows={listQuery.data?.list ?? []}
           rowKey={(r) => String(r.id)}
           loading={listQuery.isPending}
-          error={listQuery.error?.message}
-          emptyTitle="没有符合条件的问题"
-          emptyDescription="客户端上报的崩溃与错误会在这里按指纹聚合；当前时间范围与筛选条件下没有记录。"
+          error={listQuery.error ? describeError(listQuery.error) : undefined}
+          emptyTitle={t("crashIssue.emptyTitle")}
+          emptyDescription={t("crashIssue.emptyDescription")}
         />
         <Pagination
           page={page}
@@ -221,12 +233,12 @@ export default function Page() {
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle>
-                堆栈 · {detail.data?.issue.title ?? ""}
+                {t("crashIssue.stack.title", { title: detail.data?.issue.title ?? "" })}
                 {detail.data && !detail.data.symbolicated && (
-                  <span className="ml-2 text-sm font-normal text-amber-600">未符号化（尚未上传该构建的符号表）</span>
+                  <span className="ml-2 text-sm font-normal text-amber-600">{t("crashIssue.stack.unsymbolicated")}</span>
                 )}
               </CardTitle>
-              <Button variant="outline" onClick={() => setSelected(null)}>关闭</Button>
+              <Button variant="outline" onClick={() => setSelected(null)}>{t("common.action.close")}</Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -239,19 +251,20 @@ export default function Page() {
                     {f.symbol
                       ? <span>{f.symbol}{f.offset != null ? ` + ${f.offset}` : ""}</span>
                       // 跨镜像的帧不做解析：给一个看起来对、其实指错代码的函数名，比给不出名字更糟。
-                      : <span className="text-[var(--muted-foreground)]">{"<其他镜像>"}</span>}
+                      : <span className="text-[var(--muted-foreground)]">{t("crashIssue.stack.otherImage")}</span>}
                   </div>
                 ))}
-                {detail.isLoading && "加载中…"}
-                {!detail.isLoading && (detail.data?.frames ?? []).length === 0 && "该问题没有携带堆栈（平台未提供 backtrace，或上报端被裁剪）。"}
+                {detail.isLoading && t("common.loading")}
+                {!detail.isLoading && (detail.data?.frames ?? []).length === 0 && t("crashIssue.stack.empty")}
               </pre>
 
               <div className="space-y-2">
                 <div className="text-sm font-medium">
-                  上传符号表（构建 {detail.data?.issue.buildNumber ?? "-"}）
+                  {t("crashIssue.symbols.title", { build: detail.data?.issue.buildNumber ?? "-" })}
                 </div>
                 <div className="text-xs text-[var(--muted-foreground)]">
-                  粘贴 <code>nm -n &lt;binary&gt;</code> 的输出。符号按构建存储，重新上传会整表替换。
+                  {/* 词条用 {command} 标出命令的位置，命令本身按代码样式渲染。 */}
+                  {(() => { const [before, after = ""] = t("crashIssue.symbols.hint").split("{command}"); return <>{before}<code>nm -n &lt;binary&gt;</code>{after}</>; })()}
                 </div>
                 <Textarea
                   rows={6}
@@ -260,7 +273,7 @@ export default function Page() {
                   placeholder="0000000100001000 T _myFunction"
                 />
                 <div className="flex items-center gap-3">
-                  <Button disabled={!symbolText.trim()} onClick={() => void uploadSymbols()}>载入符号</Button>
+                  <Button disabled={!symbolText.trim()} onClick={() => void uploadSymbols()}>{t("crashIssue.symbols.upload")}</Button>
                   {uploadMsg && <span className="text-sm text-[var(--muted-foreground)]">{uploadMsg}</span>}
                 </div>
               </div>

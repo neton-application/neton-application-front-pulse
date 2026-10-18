@@ -2,20 +2,22 @@
 
 import * as React from "react";
 import { ResourcePage } from "@neton/application-front-resource";
+import { useT } from "@neton/application-front-runtime/i18n";
 
 /**
  * 审计规则维护。与告警分开：规则是偶尔的策略调整，告警是日常处置，
  * 两者由不同的人在不同频率上使用，权限也不同（save vs triage）。
  */
 export default function Page() {
+  const t = useT("pulse");
   return (
     <ResourcePage
       config={{
         resourceKey: "pulse-audit-rule",
-        eyebrow: "PULSE",
-        title: "审计规则",
-        description:
-          "规则是「模式 + 分级」，不是黑名单。模式支持前后缀 * 通配，不区分大小写；同一模块命中多条时，应用级规则优先于全局，其次取更严重、更具体的一条。",
+        errorNamespace: "pulse",
+        eyebrow: t("common.eyebrow"),
+        title: t("auditRule.title"),
+        description: t("auditRule.description"),
         endpoint: "/pulse/audit/rule",
         listPath: "page",
         permissions: {
@@ -25,20 +27,20 @@ export default function Page() {
           delete: "pulse:audit:save",
         },
         fields: [
-          { key: "pattern", label: "匹配模式", required: true, placeholder: "如 SDWebImage、*Ads*、WeChat*", format: "mono" },
-          { key: "label", label: "名称", placeholder: "如：广告 SDK" },
+          { key: "pattern", label: t("auditRule.field.pattern"), required: true, placeholder: t("auditRule.placeholder.pattern"), format: "mono" },
+          { key: "label", label: t("common.field.name"), placeholder: t("auditRule.placeholder.label") },
           {
-            key: "severity", label: "级别", type: "select", required: true, defaultValue: "info",
+            key: "severity", label: t("auditRule.field.severity"), type: "select", required: true, defaultValue: "info",
             options: [
-              { label: "记录（info）", value: "info" },
-              { label: "关注（warn）", value: "warn" },
-              { label: "严重（critical）", value: "critical" },
+              { label: t("auditRule.severity.info"), value: "info" },
+              { label: t("auditRule.severity.warn"), value: "warn" },
+              { label: t("auditRule.severity.critical"), value: "critical" },
             ],
           },
-          { key: "appId", label: "限定应用 ID", type: "number", placeholder: "留空表示全局规则" },
-          { key: "note", label: "备注", type: "textarea", placeholder: "为什么值得关注：合规、隐私、体积、已知漏洞……" },
-          { key: "status", label: "状态", type: "select", format: "status", defaultValue: 1,
-            options: [{ label: "启用", value: 1 }, { label: "停用", value: 0 }] },
+          { key: "appId", label: t("auditRule.field.appId"), type: "number", placeholder: t("auditRule.placeholder.appId") },
+          { key: "note", label: t("common.field.remark"), type: "textarea", placeholder: t("auditRule.placeholder.note") },
+          { key: "status", label: t("common.field.status"), type: "select", format: "status", defaultValue: 1,
+            options: [{ label: t("common.status.enabled"), value: 1 }, { label: t("common.status.disabled"), value: 0 }] },
         ],
         mapSave: (record) => ({
           ...record,

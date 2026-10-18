@@ -7,7 +7,8 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, DataTable, PageHeader, Pagination,
   type DataColumn,
 } from "@neton/application-front-kit";
-import { timeAgo } from "../pulse-ui";
+import { useFormat, useT } from "@neton/application-front-runtime/i18n";
+import { useTimeAgo } from "../pulse-ui";
 
 interface Rule {
   id: number; name: string; type: string; projectId: string | null;
@@ -21,16 +22,15 @@ interface Record_ {
 }
 interface Page<T> { list: T[]; total: number }
 
-const TYPE_LABEL: Record<string, string> = {
-  crash_free_rate: "无崩溃率跌破阈值",
-  new_issue_impact: "崩溃影响面超阈值",
-};
-const DELIVERY: Record<number, [string, string]> = {
-  0: ["待发送", "text-[var(--muted-foreground)]"],
-  1: ["已送达", "text-green-600"],
-  2: ["发送失败", "text-red-600"],
+/** 规则类型（词条 `alertRule.type.<type>`）。 */
+const RULE_TYPES = new Set(["crash_free_rate", "new_issue_impact"]);
+/** 通知状态 → 样式（文案见词条 `alert.delivery.<n>`）。 */
+const DELIVERY: Record<number, string> = {
+  0: "text-[var(--muted-foreground)]",
+  1: "text-green-600",
+  2: "text-red-600",
   // 未配置 webhook 不是错误：告警已记录，只是没有地方可送。
-  3: ["未配置通知", "text-amber-600"],
+  3: "text-amber-600",
 };
 
 /**
@@ -42,6 +42,9 @@ const DELIVERY: Record<number, [string, string]> = {
  * 发送历史不是装饰：一个没人能验证是否真的发出去过的告警系统，和没有告警是一样的。
  */
 export default function Page() {
+  const t = useT("pulse");
+  const fmt = useFormat();
+  const timeAgo = useTimeAgo();
   const queryClient = useQueryClient();
   const [busy, setBusy] = React.useState(false);
 
@@ -66,49 +69,50 @@ export default function Page() {
       const fired = await apiWrite<number>("/admin/pulse/alert/evaluate", "POST");
       await queryClient.invalidateQueries({ queryKey: ["pulse-alert-records"] });
       await queryClient.invalidateQueries({ queryKey: ["pulse-alert-rules"] });
-      window.alert(fired > 0 ? `触发了 ${fired} 条告警` : "没有规则达到触发条件");
+      window.alert(fired > 0 ? t("alert.evaluate.fired", { count: fired }) : t("alert.evaluate.none"));
     } finally {
       setBusy(false);
     }
   };
 
   const ruleColumns: DataColumn<Rule>[] = [
-    { key: "name", header: "规则", cell: (r) => <span className="font-medium">{r.name}</span> },
-    { key: "type", header: "类型", cell: (r) => TYPE_LABEL[r.type] ?? r.type },
+    { key: "name", header: t("alert.column.rule"), cell: (r) => <span className="font-medium">{r.name}</span> },
+    { key: "type", header: t("common.field.type"), cell: (r) => (RULE_TYPES.has(r.type) ? t(`alertRule.type.${r.type}`) : r.type) },
     {
-      key: "threshold", header: "阈值",
-      cell: (r) => (r.type === "crash_free_rate" ? `低于 ${r.threshold}%` : `≥ ${r.threshold} 台设备`),
+      key: "threshold", header: t("alertRule.field.threshold"),
+      cell: (r) => (r.type === "crash_free_rate" ? t("alert.threshold.rate", { threshold: r.threshold }) : t("alert.threshold.devices", { threshold: r.threshold })),
     },
-    { key: "minDevices", header: "最小样本", cell: (r) => <span className="tabular-nums">{r.minDevices} 台</span> },
-    { key: "cooldownMs", header: "冷却", cell: (r) => `${Math.round(r.cooldownMs / 60000)} 分钟` },
+    { key: "minDevices", header: t("alert.column.minDevices"), cell: (r) => <span className="tabular-nums">{t("common.devicesCount", { count: r.minDevices })}</span> },
+    { key: "cooldownMs", header: t("alert.column.cooldown"), cell: (r) => t("alert.cooldownMinutes", { count: Math.round(r.cooldownMs / 60000) }) },
     {
-      key: "webhookUrl", header: "通知地址",
-      cell: (r) => (r.webhookUrl ? <code className="text-xs">{r.webhookUrl}</code> : <span className="text-amber-600 text-xs">未配置</span>),
+      key: "webhookUrl", header: t("alertRule.field.webhookUrl"),
+      cell: (r) => (r.webhookUrl ? <code className="text-xs">{r.webhookUrl}</code> : <span className="text-amber-600 text-xs">{t("alert.notConfigured")}</span>),
     },
     {
-      key: "lastFiredAt", header: "最近触发",
+      key: "lastFiredAt", header: t("alert.column.lastFiredAt"),
       cell: (r) => (r.lastFiredAt
-        ? <span title={new Date(r.lastFiredAt).toLocaleString("zh-CN")}>{timeAgo(r.lastFiredAt)}</span>
-        : <span className="text-[var(--muted-foreground)]">从未</span>),
+        ? <span title={fmt.dateTime(r.lastFiredAt)}>{timeAgo(r.lastFiredAt)}</span>
+        : <span className="text-[var(--muted-foreground)]">{t("alert.never")}</span>),
     },
-    { key: "status", header: "状态", cell: (r) => (r.status === 1 ? "启用" : "停用") },
+    { key: "status", header: t("common.field.status"), cell: (r) => (r.status === 1 ? t("common.status.enabled") : t("common.status.disabled")) },
   ];
 
   const recordColumns: DataColumn<Record_>[] = [
-    { key: "firedAt", header: "时间", cell: (r) => new Date(r.firedAt).toLocaleString("zh-CN") },
-    { key: "title", header: "告警", cell: (r) => <span className="font-medium">{r.title}</span> },
-    { key: "detail", header: "详情", cell: (r) => <span className="text-xs">{r.detail}</span> },
+    { key: "firedAt", header: t("common.field.time"), cell: (r) => fmt.dateTime(r.firedAt) },
+    { key: "title", header: t("alert.column.alert"), cell: (r) => <span className="font-medium">{r.title}</span> },
+    { key: "detail", header: t("common.field.detail"), cell: (r) => <span className="text-xs">{r.detail}</span> },
     {
-      key: "observed", header: "实测 / 阈值",
+      key: "observed", header: t("alert.column.observed"),
       cell: (r) => <span className="tabular-nums text-xs">{r.observed} / {r.threshold}</span>,
     },
     {
-      key: "deliveryStatus", header: "通知",
+      key: "deliveryStatus", header: t("alert.column.delivery"),
       cell: (r) => {
-        const [label, cls] = DELIVERY[r.deliveryStatus] ?? ["未知", ""];
+        const cls = DELIVERY[r.deliveryStatus];
+        const label = cls === undefined ? t("alert.delivery.unknown") : t(`alert.delivery.${r.deliveryStatus}`);
         return (
-          <span className={cls} title={r.deliveryError ?? undefined}>
-            {label}{r.deliveryError ? `：${r.deliveryError}` : ""}
+          <span className={cls ?? ""} title={r.deliveryError ?? undefined}>
+            {r.deliveryError ? t("alert.delivery.withError", { label, error: r.deliveryError }) : label}
           </span>
         );
       },
@@ -118,19 +122,19 @@ export default function Page() {
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="PULSE"
-        title="告警"
-        description="规则每 5 分钟自动评估一次。定时评估而不是随上报触发：数据停止上报本身就是一种异常，而随上报触发的检查看不见沉默。"
+        eyebrow={t("common.eyebrow")}
+        title={t("alert.title")}
+        description={t("alert.description")}
       />
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>规则</CardTitle>
+            <CardTitle>{t("alert.rules.title")}</CardTitle>
             <div className="flex items-center gap-2">
-              <a className="text-sm underline" href="/pulse/alert-rules">维护规则</a>
+              <a className="text-sm underline" href="/pulse/alert-rules">{t("alert.rules.manage")}</a>
               {/* 会真的发出通知，所以和改规则同权，不给只读账号。 */}
-              <Button variant="outline" disabled={busy} onClick={() => void evaluateNow()}>立即评估</Button>
+              <Button variant="outline" disabled={busy} onClick={() => void evaluateNow()}>{t("alert.evaluate.action")}</Button>
             </div>
           </div>
         </CardHeader>
@@ -140,8 +144,8 @@ export default function Page() {
             rows={rules.data?.list ?? []}
             rowKey={(r) => String(r.id)}
             loading={rules.isLoading}
-            emptyTitle="还没有告警规则"
-            emptyDescription="没有规则时不会有任何通知——问题只能靠人主动登录后台发现。前往「维护规则」新建一条。"
+            emptyTitle={t("alert.rules.emptyTitle")}
+            emptyDescription={t("alert.rules.emptyDescription")}
           />
           <Pagination
             page={rulePage} pageSize={ruleSize} total={rules.data?.total ?? 0}
@@ -153,15 +157,15 @@ export default function Page() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>触发历史</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("alert.records.title")}</CardTitle></CardHeader>
         <CardContent className="px-0 pb-0">
           <DataTable
             columns={recordColumns}
             rows={records.data?.list ?? []}
             rowKey={(r) => String(r.id)}
             loading={records.isLoading}
-            emptyTitle="还没有触发过"
-            emptyDescription="每次触发都会连同通知是否送达一起记录在这里。"
+            emptyTitle={t("alert.records.emptyTitle")}
+            emptyDescription={t("alert.records.emptyDescription")}
           />
           <Pagination
             page={recordPage} pageSize={recordSize} total={records.data?.total ?? 0}
